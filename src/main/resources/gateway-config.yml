@@ -1,0 +1,11 @@
+hosted:
+  - alias: hosted_test
+    mqttTopic: gateway/hosted/test
+    pvName: HOSTED:PV:01
+    mode: READ_ONLY
+
+external:
+  - alias: external_test
+    mqttTopic: gateway/external/test
+    pvName: EXTERNAL:PV:01
+    mode: READ_WRITE
