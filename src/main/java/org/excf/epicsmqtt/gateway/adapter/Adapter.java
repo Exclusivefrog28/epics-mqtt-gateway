@@ -2,6 +2,8 @@ package org.excf.epicsmqtt.gateway.adapter;
 
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
+import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,20 +31,23 @@ public abstract class Adapter {
         return externalChannels.contains(channel);
     }
 
-    public String getHosted(String channel) throws Exception {
+    public PVValue getHosted(String channel) throws Exception {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public void putHosted(String channel, String value) throws Exception {
+    public void putHosted(String channel, PVValue value) throws Exception {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public String getExternal(String channel) {
-        throw new UnsupportedOperationException("Not implemented");
+    public PVValue getExternal(String channel) {
+        return bridge.get(channel);
     }
 
-    public void putExternal(String channel, String value) {
-        throw new UnsupportedOperationException("Not implemented");
+    public void putExternal(String channel, PVValue value) {
+        bridge.put(channel, value);
     }
 
+    public Channel getChannel(String channel) {
+        return bridge.getChannel(channel);
+    }
 }

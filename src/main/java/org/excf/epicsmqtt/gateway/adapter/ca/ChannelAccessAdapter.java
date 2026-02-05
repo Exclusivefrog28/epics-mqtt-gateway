@@ -2,45 +2,95 @@ package org.excf.epicsmqtt.gateway.adapter.ca;
 
 import gov.aps.jca.JCALibrary;
 import gov.aps.jca.cas.ServerContext;
-import gov.aps.jca.dbr.DBRType;
-import gov.aps.jca.dbr.DBR_String;
+import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
-import org.excf.epicsmqtt.gateway.adapter.Adapter;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.excf.epicsmqtt.gateway.adapter.Adapter;
+import org.excf.epicsmqtt.gateway.model.PVValue;
+
+import java.time.Instant;
 
 @ApplicationScoped
 public class ChannelAccessAdapter extends Adapter {
+
     private ServerContext caServer;
+
+    @ConfigProperty(name = "ca.client.auto.addr.list")
+    String clientAutoAddrList;
+    @ConfigProperty(name = "ca.client.addr.list")
+    String clientAddrList;
+
     private CAClient caClient;
 
     private Thread caServerThread;
 
     @Override
-    public String getHosted(String channel) throws Exception {
-        return ((DBR_String) caClient.get(channel).convert(DBRType.STRING)).getStringValue()[0];
+    public PVValue getHosted(String channel) throws Exception {
+        DBR dbr = caClient.get(channel);
+        return convertDBRToPVValue(dbr);
     }
 
     @Override
-    public void putHosted(String channel, String value) throws Exception {
-        caClient.put(channel, value);
+    public void putHosted(String channel, PVValue value) throws Exception {
+        caClient.put(channel, value.value);
     }
 
-    @Override
-    public String getExternal(String channel) {
-        return bridge.get(channel);
+    PVValue convertDBRToPVValue(DBR dbr) {
+        PVValue pvValue = new PVValue();
+
+        pvValue.value = dbr.getValue();
+        pvValue.setDBRType(dbr.getType());
+
+        // Extract Metadata
+        if (dbr instanceof GR gr) {
+            pvValue.metadata.units = gr.getUnits();
+            pvValue.metadata.upperDisplayLimit = gr.getUpperDispLimit();
+            pvValue.metadata.lowerDisplayLimit = gr.getLowerDispLimit();
+            pvValue.metadata.upperAlarmLimit = gr.getUpperAlarmLimit();
+            pvValue.metadata.upperWarningLimit = gr.getUpperWarningLimit();
+            pvValue.metadata.lowerWarningLimit = gr.getLowerWarningLimit();
+            pvValue.metadata.lowerAlarmLimit = gr.getLowerAlarmLimit();
+        }
+
+        // Extract precision
+        if (dbr instanceof PRECISION pr) {
+            pvValue.metadata.precision = (int) pr.getPrecision();
+        }
+
+        // Extract control
+        if (dbr instanceof CTRL ctrl) {
+            pvValue.metadata.upperControlLimit = ctrl.getUpperCtrlLimit();
+            pvValue.metadata.lowerControlLimit = ctrl.getLowerCtrlLimit();
+        }
+
+        // Extract Status
+        if (dbr instanceof STS sts) {
+            pvValue.status = sts.getStatus();
+            pvValue.severity = sts.getSeverity();
+        }
+
+        // Extract Time
+        if (dbr instanceof TIME t) {
+            TimeStamp ts = t.getTimeStamp();
+            if (ts != null) {
+                pvValue.timestamp = Instant.ofEpochSecond(ts.secPastEpoch(), ts.nsec());
+            }
+        }
+
+        return pvValue;
     }
 
-    @Override
-    public void putExternal(String channel, String value) {
-        bridge.put(channel, value);
-    }
-
-    @jakarta.annotation.PostConstruct
+    @PostConstruct
     public void startup() {
         try {
-            System.setProperty("com.cosylab.epics.caj.CAJContext.name_servers", "127.0.0.1:9064");
+            System.setProperty("com.cosylab.epics.caj.CAJContext.addr_list", clientAddrList);
+            System.setProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", clientAutoAddrList);
 
-            caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA, new CAServer(this));
+            caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
+                    new CAServer(this));
             caClient = new CAClient(JCALibrary.getInstance().createContext(JCALibrary.CHANNEL_ACCESS_JAVA));
 
             caServerThread = new Thread(() -> {
@@ -56,10 +106,10 @@ public class ChannelAccessAdapter extends Adapter {
         }
     }
 
-    @jakarta.annotation.PreDestroy
+    @PreDestroy
     public void cleanup() {
         try {
-            if (caServerThread != null){
+            if (caServerThread != null) {
                 caServerThread.interrupt();
                 caServerThread.join();
             }

@@ -1,5 +1,7 @@
 package org.excf.epicsmqtt.gateway.bridge;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.ShutdownEvent;
 import io.smallrye.reactive.messaging.mqtt.MqttMessage;
@@ -7,10 +9,13 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
+import org.eclipse.microprofile.reactive.messaging.Outgoing;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -21,13 +26,20 @@ import java.util.concurrent.ConcurrentHashMap;
 @ApplicationScoped
 public class Bridge {
 
+    @Inject
+    ObjectMapper mapper;
+
     protected Map<String, Adapter> adapters = new HashMap<>();
     protected Map<String, Channel> topicMap = new ConcurrentHashMap<>();
 
-    protected Map<String, String> externalChannelValues = new ConcurrentHashMap<>();
+    protected Map<String, PVValue> externalChannelValues = new ConcurrentHashMap<>();
 
     @Inject
     Instance<Adapter> adapterInstances;
+
+    @Inject
+    @org.eclipse.microprofile.reactive.messaging.Channel("data-out")
+    Emitter<byte[]> emitter;
 
     void onStop(@Observes ShutdownEvent ev) {
     }
@@ -64,27 +76,43 @@ public class Bridge {
         String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
 
         try {
+            PVValue pvValue = mapper.readValue(payload, PVValue.class);
+
             if (adapters.containsKey(channel.pvName)) {
                 Adapter adapter = adapters.get(channel.pvName);
 
                 if (adapter.hostsChannel(channel.pvName))
-                    adapter.putHosted(channel.pvName, payload);
+                    adapter.putHosted(channel.pvName, pvValue);
 
-                else externalChannelValues.put(channel.pvName, payload);
+                else
+                    externalChannelValues.put(channel.pvName, pvValue);
             }
         } catch (Exception e) {
-            Log.error(e);
+            Log.error("Error processing MQTT message", e);
         }
 
         return message.ack();
     }
 
-    public String get(String channel) {
+    public PVValue get(String channel) {
         return externalChannelValues.get(channel);
     }
 
-    public void put(String channel, String value) {
+    public void put(String channel, PVValue value) {
         externalChannelValues.put(channel, value);
+        try {
+            emitter.send(mapper.writeValueAsBytes(value));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Cannot serialize PVValue", e);
+        }
+
     }
 
+    public Channel getChannel(String pvName) {
+        for (Channel c : topicMap.values()) {
+            if (c.pvName.equals(pvName))
+                return c;
+        }
+        return null;
+    }
 }

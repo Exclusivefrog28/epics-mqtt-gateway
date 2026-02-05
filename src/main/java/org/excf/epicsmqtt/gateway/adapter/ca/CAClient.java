@@ -4,7 +4,8 @@ import gov.aps.jca.CAException;
 import gov.aps.jca.Channel;
 import gov.aps.jca.Context;
 import gov.aps.jca.TimeoutException;
-import gov.aps.jca.dbr.DBR;
+import gov.aps.jca.dbr.*;
+import io.quarkus.logging.Log;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,8 +23,8 @@ public class CAClient {
 
     public synchronized DBR get(String channelName) throws CAException, TimeoutException {
         Channel channel = accessOrOpenChannel(channelName);
-
         context.pendIO(5.0);
+
         DBR dbr = channel.get();
         context.pendIO(5.0);
 
@@ -32,11 +33,34 @@ public class CAClient {
         return dbr;
     }
 
-    public synchronized void put(String channelName, String value) throws CAException, TimeoutException {
+    public synchronized DBR get(String channelName, DBRType dbrType) throws CAException, TimeoutException {
         Channel channel = accessOrOpenChannel(channelName);
-
         context.pendIO(5.0);
-        channel.put(value);
+
+        DBR dbr = channel.get();
+        context.pendIO(5.0);
+
+        context.flushIO();
+        tryCloseChannel(channel);
+        return dbr;
+    }
+
+    public synchronized void put(String channelName, Object value) throws CAException, TimeoutException {
+        Channel channel = accessOrOpenChannel(channelName);
+        context.pendIO(5.0);
+
+        channel.printInfo();
+
+        switch (value) {
+            case int[] ig -> channel.put(ig);
+            case double[] du -> channel.put(du);
+            case byte[] by -> channel.put(by);
+            case short[] sh -> channel.put(sh);
+            case float[] fl -> channel.put(fl);
+            case String[] st -> channel.put(st);
+            default -> throw new IllegalStateException("Unexpected value: " + value);
+        }
+
         context.flushIO();
 
         tryCloseChannel(channel);
@@ -56,6 +80,5 @@ public class CAClient {
         channel.destroy();
         openChannels.remove(channel.getName());
     }
-
 
 }
