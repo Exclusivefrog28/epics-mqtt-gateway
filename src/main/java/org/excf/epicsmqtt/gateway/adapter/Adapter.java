@@ -40,12 +40,17 @@ public abstract class Adapter {
     }
 
     public PVValue getExternal(String channel) {
-        return bridge.get(channel);
+        return bridge.getExternal(channel);
     }
 
     public void putExternal(String channel, PVValue value) {
+        bridge.putExternal(channel, value);
+    }
+
+    public void put(String channel, PVValue value) {
         bridge.put(channel, value);
     }
+
 
     public Channel getChannel(String channel) {
         return bridge.getChannel(channel);

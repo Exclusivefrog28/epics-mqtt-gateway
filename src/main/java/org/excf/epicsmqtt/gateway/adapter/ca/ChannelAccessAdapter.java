@@ -80,6 +80,10 @@ public class ChannelAccessAdapter extends Adapter {
             }
         }
 
+        if (dbr instanceof LABELS) {
+            pvValue.metadata.labels = ((LABELS) dbr).getLabels();
+        }
+
         return pvValue;
     }
 
@@ -91,7 +95,8 @@ public class ChannelAccessAdapter extends Adapter {
 
             caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
                     new CAServer(this));
-            caClient = new CAClient(JCALibrary.getInstance().createContext(JCALibrary.CHANNEL_ACCESS_JAVA));
+            caClient = new CAClient(JCALibrary.getInstance().createContext(JCALibrary.CHANNEL_ACCESS_JAVA),
+                    this);
 
             caServerThread = new Thread(() -> {
                 try {

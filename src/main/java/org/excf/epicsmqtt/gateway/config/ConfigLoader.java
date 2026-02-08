@@ -2,6 +2,7 @@ package org.excf.epicsmqtt.gateway.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.quarkus.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -20,7 +21,7 @@ public class ConfigLoader {
         try (InputStream is = Thread.currentThread().getContextClassLoader()
                 .getResourceAsStream("gateway-config.yml")) {
             if (is == null) {
-                System.out.println("No gateway-config.yml found, skipping configuration.");
+                Log.warn("No gateway-config.yml found, skipping configuration.");
                 return;
             }
             ObjectMapper mapper = new ObjectMapper(new YAMLFactory());

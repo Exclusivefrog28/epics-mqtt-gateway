@@ -38,6 +38,11 @@ public class PVValue {
         return DBRType.forValue(type);
     }
 
+    @JsonIgnore
+    public int getCount(){
+        return 0;
+    }
+
     public PVValue() {
     }
 }

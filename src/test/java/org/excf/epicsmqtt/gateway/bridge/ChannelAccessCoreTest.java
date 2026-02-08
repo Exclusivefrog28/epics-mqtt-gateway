@@ -8,6 +8,7 @@ import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_Double;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.reactive.messaging.mqtt.MqttMessage;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
@@ -23,13 +24,14 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.Random;
+import java.util.concurrent.CompletionStage;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
 @QuarkusTest
 @QuarkusTestResource(EpicsIocResource.class)
-public class ChannelAccessBridgeTest {
+public class ChannelAccessCoreTest {
 
     @Inject
     Bridge bridge;
@@ -39,7 +41,7 @@ public class ChannelAccessBridgeTest {
 
     @Inject
     @org.eclipse.microprofile.reactive.messaging.Channel("data-out")
-    Emitter<String> emitter;
+    Emitter<byte[]> emitter;
 
     @Inject
     ObjectMapper mapper;
@@ -58,7 +60,7 @@ public class ChannelAccessBridgeTest {
 
         Channel channel = new Channel();
         channel.alias = "test_alias";
-        channel.mqttTopic = "test/topic";
+        channel.mqttTopic = "pv/arraycounter";
         channel.pvName = "BL01T-DI-CAM-01:DET:ArrayCounter";
         channel.mode = Mode.READ_ONLY;
 
@@ -69,7 +71,7 @@ public class ChannelAccessBridgeTest {
         pvValue.value = new int[]{randomInt};
 
         bridge.registerHosted(channel);
-        emitter.send(mapper.writeValueAsString(pvValue));
+        emitter.send(MqttMessage.of(channel.mqttTopic, mapper.writeValueAsBytes(pvValue)));
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
@@ -85,11 +87,11 @@ public class ChannelAccessBridgeTest {
         TestContext context = new TestContext();
         context.configure(new DefaultConfiguration("CONTEXT"));
 
-        CAClient caClient = new CAClient(context);
+        CAClient caClient = new CAClient(context, adapter);
 
         Channel channel = new Channel();
         channel.alias = "test_alias";
-        channel.mqttTopic = "test/topic";
+        channel.mqttTopic = "pv/external_double";
         channel.pvName = "remote:pv";
         channel.mode = Mode.READ_ONLY;
 
@@ -98,7 +100,7 @@ public class ChannelAccessBridgeTest {
         pvValue.setDBRType(DBRType.DOUBLE);
         pvValue.value = new double[]{new Random().nextDouble(0, 100)};
         pvValue.timestamp = Instant.now();
-        bridge.put(channel.pvName, pvValue);
+        bridge.putExternal(channel.pvName, pvValue);
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
@@ -119,11 +121,11 @@ public class ChannelAccessBridgeTest {
         TestContext context = new TestContext();
         context.configure(new DefaultConfiguration("CONTEXT"));
 
-        CAClient caClient = new CAClient(context);
+        CAClient caClient = new CAClient(context, adapter);
 
         Channel channel = new Channel();
         channel.alias = "test_alias";
-        channel.mqttTopic = "test/topic";
+        channel.mqttTopic = "pv/external_double";
         channel.pvName = "remote:pv";
         channel.mode = Mode.READ_ONLY;
 
@@ -135,7 +137,7 @@ public class ChannelAccessBridgeTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.put(channel.pvName, pvValue);
+        bridge.putExternal(channel.pvName, pvValue);
 
         double[] testValue = new double[]{new Random().nextDouble(0, 100)};
 
@@ -154,9 +156,11 @@ public class ChannelAccessBridgeTest {
 
         private volatile byte[] lastMessage;
 
-        @Incoming("test/topic")
-        public void listen(byte[] payload) {
-            this.lastMessage = payload;
+        @Incoming("pv/+")
+        public CompletionStage<Void> listen(MqttMessage<byte[]> message) {
+            this.lastMessage = message.getPayload();
+
+            return message.ack();
         }
 
         public byte[] getLastMessage() {

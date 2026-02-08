@@ -2,6 +2,7 @@ package org.excf.epicsmqtt.gateway.model;
 
 public class PVMetadata {
     public String units = "";
+    public String[] labels = new String[]{};
     public Integer precision = 0;
     public Number upperDisplayLimit = 0;
     public Number lowerDisplayLimit = 0;

@@ -11,7 +11,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
-import org.eclipse.microprofile.reactive.messaging.Outgoing;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.Channel;
@@ -64,19 +63,18 @@ public class Bridge {
         }
     }
 
-    @Incoming("test/topic")
+    @Incoming("data-in")
     public CompletionStage<Void> consume(MqttMessage<byte[]> message) {
         String topic = message.getTopic();
+        Log.info("Topic: %s".formatted(topic));
 
         Channel channel = topicMap.get(topic);
         if (channel == null) {
             return message.ack();
         }
 
-        String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-
         try {
-            PVValue pvValue = mapper.readValue(payload, PVValue.class);
+            PVValue pvValue = mapper.readValue(message.getPayload(), PVValue.class);
 
             if (adapters.containsKey(channel.pvName)) {
                 Adapter adapter = adapters.get(channel.pvName);
@@ -94,18 +92,21 @@ public class Bridge {
         return message.ack();
     }
 
-    public PVValue get(String channel) {
+    public PVValue getExternal(String channel) {
         return externalChannelValues.get(channel);
     }
 
-    public void put(String channel, PVValue value) {
-        externalChannelValues.put(channel, value);
+    public void put(String pvName, PVValue value){
         try {
-            emitter.send(mapper.writeValueAsBytes(value));
+            emitter.send(MqttMessage.of(getChannel(pvName).mqttTopic, mapper.writeValueAsBytes(value)));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Cannot serialize PVValue", e);
         }
+    }
 
+    public void putExternal(String pvName, PVValue value) {
+        externalChannelValues.put(pvName, value);
+        put(pvName, value);
     }
 
     public Channel getChannel(String pvName) {

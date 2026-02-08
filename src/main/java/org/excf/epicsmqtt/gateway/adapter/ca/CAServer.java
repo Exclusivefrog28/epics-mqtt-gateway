@@ -1,7 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
 import gov.aps.jca.CAStatus;
-import gov.aps.jca.CAStatusException;
 import gov.aps.jca.cas.*;
 import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
@@ -60,7 +59,7 @@ public class CAServer implements Server {
                     try {
                         fillDBR(dbr, pvValue);
                     } catch (Exception e) {
-                        Log.error("Couldn't serve PV", e);
+                        Log.error("Couldn't serve PV to read", e);
                         return CAStatus.DEFUNCT;
                     }
 
@@ -69,16 +68,26 @@ public class CAServer implements Server {
 
                 @Override
                 public CAStatus write(DBR dbr, ProcessVariableWriteCallback processVariableWriteCallback) {
-                    adapter.putExternal(s, adapter.convertDBRToPVValue(dbr));
+                    try {
+                        adapter.putExternal(s, adapter.convertDBRToPVValue(dbr));
+                    } catch (Exception e) {
+                        Log.error("Couldn't serve PV to write", e);
+                        return CAStatus.DEFUNCT;
+                    }
+
                     return CAStatus.NORMAL;
+                }
+
+                @Override
+                public String[] getEnumLabels() {
+                    return pvValue.metadata.labels;
                 }
             };
         }
         return null;
     }
 
-    private void fillDBR(DBR dbr, PVValue pvValue) throws CAStatusException {
-
+    private void fillDBR(DBR dbr, PVValue pvValue) {
         PrimitiveConverter.toPrimitiveArray(pvValue.value, dbr.getValue());
 
         // Extract Metadata
@@ -112,6 +121,10 @@ public class CAServer implements Server {
         // Extract Time
         if (dbr instanceof TIME t) {
             t.setTimeStamp(new TimeStamp(pvValue.timestamp.getEpochSecond(), pvValue.timestamp.getNano()));
+        }
+
+        if (dbr instanceof LABELS l) {
+            l.setLabels(pvValue.metadata.labels);
         }
     }
 
