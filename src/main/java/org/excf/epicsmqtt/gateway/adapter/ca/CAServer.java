@@ -114,8 +114,8 @@ public class CAServer implements Server {
 
         // Extract Status
         if (dbr instanceof STS sts) {
-            sts.setStatus(pvValue.status != null ? pvValue.status : Status.NO_ALARM);
-            sts.setSeverity(pvValue.severity != null ? pvValue.severity : Severity.NO_ALARM);
+            sts.setStatus(pvValue.getStatus());
+            sts.setSeverity(pvValue.getSeverity());
         }
 
         // Extract Time

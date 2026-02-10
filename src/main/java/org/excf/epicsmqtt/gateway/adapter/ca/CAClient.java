@@ -1,11 +1,10 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
-import gov.aps.jca.CAException;
-import gov.aps.jca.Channel;
-import gov.aps.jca.Context;
-import gov.aps.jca.TimeoutException;
+import com.cosylab.epics.caj.CAJContext;
+import gov.aps.jca.*;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
+import io.quarkus.logging.Log;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,6 +12,7 @@ public class CAClient {
     Context context;
 
     ConcurrentHashMap<String, Channel> openChannels;
+    ConcurrentHashMap<String, Monitor> openMonitors;
 
     private final ChannelAccessAdapter adapter;
 
@@ -20,6 +20,7 @@ public class CAClient {
         this.context = context;
         this.adapter = adapter;
         openChannels = new ConcurrentHashMap<>();
+        openMonitors = new ConcurrentHashMap<>();
     }
 
     public synchronized DBR get(String channelName) throws CAException, TimeoutException {
@@ -49,9 +50,29 @@ public class CAClient {
     public synchronized void attachMonitor(String channelName) throws CAException, TimeoutException {
         Channel channel = accessOrOpenChannel(channelName);
         context.pendIO(5.0);
+        channel.printInfo();
 
-        channel.addMonitor(DBRType.forValue(channel.getFieldType().getValue() + 28), channel.getElementCount(), 1, ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())));
+        openMonitors.computeIfAbsent(channelName, c -> {
+            try {
+                return channel.addMonitor(DBRType.forValue(channel.getFieldType().getValue() + 28), channel.getElementCount(), Monitor.VALUE,
+                        ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())));
+            } catch (CAException e) {
+                Log.warn("Couldn't attach monitor to %s".formatted(channelName));
+                throw new RuntimeException(e);
+            }
+        });
+
         context.pendIO(5.0);
+        context.flushIO();
+    }
+
+    public synchronized void detachMonitor(String channelName) throws CAException {
+        if (openMonitors.containsKey(channelName)) {
+            openMonitors.get(channelName).clear();
+            openMonitors.remove(channelName);
+        }
+
+        tryCloseChannel(channelName);
     }
 
     public synchronized void put(String channelName, Object value) throws CAException, TimeoutException {
@@ -84,9 +105,16 @@ public class CAClient {
         });
     }
 
+    private void tryCloseChannel(String channelName) throws CAException {
+        if (openChannels.containsKey(channelName))
+            tryCloseChannel(openChannels.get(channelName));
+    }
+
     private void tryCloseChannel(Channel channel) throws CAException {
-        channel.destroy();
-        openChannels.remove(channel.getName());
+        if (!openMonitors.containsKey(channel.getName())) {
+            channel.destroy();
+            openChannels.remove(channel.getName());
+        }
     }
 
 }

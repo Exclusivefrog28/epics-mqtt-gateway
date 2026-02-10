@@ -1,11 +1,12 @@
 hosted:
-  - alias: hosted_test
-    mqttTopic: gateway/hosted/test
-    pvName: HOSTED:PV:01
-    mode: READ_ONLY
-
+#  - alias: hosted_test
+#    mqttTopic: pv/hosted
+#    pvName: BL01T-EA-TST-02:UPTIME
+#    mode: READ_ONLY
+#    monitor: true
+#
 external:
-  - alias: external_test
-    mqttTopic: gateway/external/test
-    pvName: EXTERNAL:PV:01
-    mode: READ_WRITE
+#  - alias: external_test
+#    mqttTopic: pv/external
+#    pvName: EXTERNAL:PV:01
+#    mode: READ_WRITE

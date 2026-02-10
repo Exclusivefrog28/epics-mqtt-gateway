@@ -1,8 +1,9 @@
 package org.excf.epicsmqtt.gateway.adapter;
 
+import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
-import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.util.ArrayList;
@@ -15,12 +16,20 @@ public abstract class Adapter {
     Collection<String> hostedChannels = new ArrayList<>();
     Collection<String> externalChannels = new ArrayList<>();
 
-    public void addHostedChannel(String channel) {
+    public void addHostedChannel(String channel, boolean monitor) {
         hostedChannels.add(channel);
     }
 
     public void addExternalChannel(String channel) {
         externalChannels.add(channel);
+    }
+
+    public void removeHostedChannel(String channel){
+        hostedChannels.remove(channel);
+    }
+
+    public void removeExternalChannel(String channel){
+        externalChannels.remove(channel);
     }
 
     public boolean hostsChannel(String channel) {
@@ -52,7 +61,7 @@ public abstract class Adapter {
     }
 
 
-    public Channel getChannel(String channel) {
+    public ExternalChannel getChannel(String channel) {
         return bridge.getChannel(channel);
     }
 }

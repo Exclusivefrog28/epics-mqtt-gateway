@@ -13,10 +13,10 @@ import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
-import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.config.ExternalChannel;
+import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
@@ -29,7 +29,7 @@ public class Bridge {
     ObjectMapper mapper;
 
     protected Map<String, Adapter> adapters = new HashMap<>();
-    protected Map<String, Channel> topicMap = new ConcurrentHashMap<>();
+    protected Map<String, ExternalChannel> topicMap = new ConcurrentHashMap<>();
 
     protected Map<String, PVValue> externalChannelValues = new ConcurrentHashMap<>();
 
@@ -43,17 +43,17 @@ public class Bridge {
     void onStop(@Observes ShutdownEvent ev) {
     }
 
-    public void registerHosted(Channel channel) {
+    public void registerHosted(HostedChannel channel) {
         topicMap.put(channel.mqttTopic, channel);
         for (Adapter a : adapterInstances) {
             if (a instanceof ChannelAccessAdapter) {
-                a.addHostedChannel(channel.pvName);
+                a.addHostedChannel(channel.pvName, channel.monitor);
                 adapters.put(channel.pvName, a);
             }
         }
     }
 
-    public void registerExternal(Channel channel) {
+    public void registerExternal(ExternalChannel channel) {
         topicMap.put(channel.mqttTopic, channel);
         for (Adapter a : adapterInstances) {
             if (a instanceof ChannelAccessAdapter) {
@@ -68,7 +68,7 @@ public class Bridge {
         String topic = message.getTopic();
         Log.info("Topic: %s".formatted(topic));
 
-        Channel channel = topicMap.get(topic);
+        ExternalChannel channel = topicMap.get(topic);
         if (channel == null) {
             return message.ack();
         }
@@ -79,10 +79,9 @@ public class Bridge {
             if (adapters.containsKey(channel.pvName)) {
                 Adapter adapter = adapters.get(channel.pvName);
 
-                if (adapter.hostsChannel(channel.pvName))
-                    adapter.putHosted(channel.pvName, pvValue);
-
-                else
+                if (adapter.hostsChannel(channel.pvName) && channel instanceof HostedChannel hostedChannel) {
+                    if (!hostedChannel.monitor) adapter.putHosted(channel.pvName, pvValue);
+                } else
                     externalChannelValues.put(channel.pvName, pvValue);
             }
         } catch (Exception e) {
@@ -96,7 +95,7 @@ public class Bridge {
         return externalChannelValues.get(channel);
     }
 
-    public void put(String pvName, PVValue value){
+    public void put(String pvName, PVValue value) {
         try {
             emitter.send(MqttMessage.of(getChannel(pvName).mqttTopic, mapper.writeValueAsBytes(value)));
         } catch (JsonProcessingException e) {
@@ -109,11 +108,17 @@ public class Bridge {
         put(pvName, value);
     }
 
-    public Channel getChannel(String pvName) {
-        for (Channel c : topicMap.values()) {
+    public ExternalChannel getChannel(String pvName) {
+        for (ExternalChannel c : topicMap.values()) {
             if (c.pvName.equals(pvName))
                 return c;
         }
         return null;
+    }
+
+    public void clear() {
+        externalChannelValues.clear();
+        adapters.clear();
+        topicMap.clear();
     }
 }

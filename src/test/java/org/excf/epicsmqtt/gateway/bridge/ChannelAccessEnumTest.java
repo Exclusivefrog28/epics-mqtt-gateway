@@ -3,8 +3,9 @@ package org.excf.epicsmqtt.gateway.bridge;
 import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gov.aps.jca.configuration.DefaultConfiguration;
-import gov.aps.jca.dbr.*;
-import io.quarkus.logging.Log;
+import gov.aps.jca.dbr.DBR;
+import gov.aps.jca.dbr.DBRType;
+import gov.aps.jca.dbr.DBR_String;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.reactive.messaging.mqtt.MqttMessage;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -13,15 +14,14 @@ import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
-import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.config.ExternalChannel;
+import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.Random;
 import java.util.concurrent.CompletionStage;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -51,7 +51,7 @@ public class ChannelAccessEnumTest {
     @Test
     public void testHostedChannelEnum() throws Exception {
 
-        Channel channel = new Channel();
+        HostedChannel channel = new HostedChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/acquire";
         channel.pvName = "BL01T-DI-CAM-01:DET:Acquire";
@@ -92,7 +92,7 @@ public class ChannelAccessEnumTest {
 
         CAClient caClient = new CAClient(context, adapter);
 
-        Channel channel = new Channel();
+        ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_enum";
         channel.pvName = "remote:pv:enum";
@@ -126,7 +126,7 @@ public class ChannelAccessEnumTest {
 
         CAClient caClient = new CAClient(context, adapter);
 
-        Channel channel = new Channel();
+        ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_enum";
         channel.pvName = "remote:pv:enum";
@@ -159,7 +159,7 @@ public class ChannelAccessEnumTest {
 
         private volatile byte[] lastMessage;
 
-        @Incoming("pv/+")
+        @Incoming("data-in")
         public CompletionStage<Void> listen(MqttMessage<byte[]> message) {
             this.lastMessage = message.getPayload();
 

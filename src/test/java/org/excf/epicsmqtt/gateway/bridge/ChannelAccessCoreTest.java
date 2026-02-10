@@ -16,13 +16,15 @@ import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.excf.epicsmqtt.gateway.EpicsIocResource;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
-import org.excf.epicsmqtt.gateway.config.Channel;
+import org.excf.epicsmqtt.gateway.config.ExternalChannel;
+import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.Random;
 import java.util.concurrent.CompletionStage;
 
@@ -58,11 +60,11 @@ public class ChannelAccessCoreTest {
     @Test
     public void testHostedChannel() throws Exception {
 
-        Channel channel = new Channel();
+        HostedChannel channel = new HostedChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/arraycounter";
         channel.pvName = "BL01T-DI-CAM-01:DET:ArrayCounter";
-        channel.mode = Mode.READ_ONLY;
+        channel.mode = Mode.READ_WRITE;
 
         int randomInt = new Random().nextInt(100);
 
@@ -79,6 +81,35 @@ public class ChannelAccessCoreTest {
     }
 
     /**
+     * Tests CA client monitoring local channel
+     */
+    @Test
+    public void testHostedChannelMonitor() {
+        HostedChannel channel = new HostedChannel();
+        channel.alias = "test_alias";
+        channel.mqttTopic = "pv/uptime";
+        channel.pvName = "BL01T-EA-TST-02:UPTIME";
+        channel.mode = Mode.READ_ONLY;
+        channel.monitor = true;
+
+        bridge.registerHosted(channel);
+
+        HashSet<String> receivedValues = new HashSet<>();
+
+        await().atMost(5, SECONDS).untilAsserted(
+                () -> {
+                    byte[] lastMessage = spy.getLastMessage();
+                    Assertions.assertNotNull(lastMessage);
+                    String monitorValue = ((String[]) mapper.readValue(lastMessage, PVValue.class).value)[0];
+                    Assertions.assertNotNull(monitorValue);
+                    receivedValues.add(monitorValue);
+                    Assertions.assertTrue(receivedValues.size() > 2);
+                });
+
+        adapter.removeHostedChannel(channel.pvName);
+    }
+
+    /**
      * Tests getting an external value through the CA server
      */
     @Test
@@ -89,7 +120,7 @@ public class ChannelAccessCoreTest {
 
         CAClient caClient = new CAClient(context, adapter);
 
-        Channel channel = new Channel();
+        ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_double";
         channel.pvName = "remote:pv";
@@ -123,7 +154,7 @@ public class ChannelAccessCoreTest {
 
         CAClient caClient = new CAClient(context, adapter);
 
-        Channel channel = new Channel();
+        ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_double";
         channel.pvName = "remote:pv";
@@ -156,7 +187,7 @@ public class ChannelAccessCoreTest {
 
         private volatile byte[] lastMessage;
 
-        @Incoming("pv/+")
+        @Incoming("data-in")
         public CompletionStage<Void> listen(MqttMessage<byte[]> message) {
             this.lastMessage = message.getPayload();
 

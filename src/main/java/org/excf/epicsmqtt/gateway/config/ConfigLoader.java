@@ -1,13 +1,13 @@
 package org.excf.epicsmqtt.gateway.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
+import org.excf.epicsmqtt.gateway.config.yaml.Yaml;
 
 import java.io.InputStream;
 
@@ -17,23 +17,30 @@ public class ConfigLoader {
     @Inject
     Bridge bridge;
 
+    @Inject
+    @Yaml
+    ObjectMapper mapper;
+
     void onStart(@Observes StartupEvent ev) {
+        reload();
+    }
+
+    public void reload() {
         try (InputStream is = Thread.currentThread().getContextClassLoader()
                 .getResourceAsStream("gateway-config.yml")) {
             if (is == null) {
                 Log.warn("No gateway-config.yml found, skipping configuration.");
                 return;
             }
-            ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
             GatewayConfig config = mapper.readValue(is, GatewayConfig.class);
 
             if (config.hosted != null) {
-                for (Channel channel : config.hosted) {
+                for (HostedChannel channel : config.hosted) {
                     bridge.registerHosted(channel);
                 }
             }
             if (config.external != null) {
-                for (Channel channel : config.external) {
+                for (ExternalChannel channel : config.external) {
                     bridge.registerExternal(channel);
                 }
             }

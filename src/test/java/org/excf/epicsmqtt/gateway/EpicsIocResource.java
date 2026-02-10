@@ -22,10 +22,14 @@ public class EpicsIocResource implements QuarkusTestResourceLifecycleManager {
 
         ioc = new GenericContainer<>(DockerImageName.parse(IMAGE))
                 .withReuse(true)
-                .waitingFor(Wait.forLogMessage(".*iocRun: All initialization complete.*\\n", 1))
                 .withEnv("EPICS_CA_SERVER_PORT", String.valueOf(serverPort))
                 .withEnv("EPICS_CA_REPEATER_PORT", String.valueOf(repeaterPort))
-                .withExposedPorts(serverPort, repeaterPort);
+                .withExposedPorts(serverPort, repeaterPort)
+                .waitingFor(Wait.forLogMessage(".*iocRun: All initialization complete.*\\n", 1))
+                .withCreateContainerCmdModifier(cmd -> {
+                    cmd.withTty(true);
+                    cmd.withStdinOpen(true);
+                });
 
         ioc.setPortBindings(java.util.Arrays.asList(
                 serverPort + ":" + serverPort + "/tcp",

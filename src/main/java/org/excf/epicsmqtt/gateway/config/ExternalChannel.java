@@ -1,6 +1,6 @@
 package org.excf.epicsmqtt.gateway.config;
 
-public class Channel {
+public class ExternalChannel {
     public String alias;
     public String mqttTopic;
     public String pvName;

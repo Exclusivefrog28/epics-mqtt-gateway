@@ -1,5 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
+import com.cosylab.epics.caj.CAJContext;
 import gov.aps.jca.JCALibrary;
 import gov.aps.jca.cas.ServerContext;
 import gov.aps.jca.dbr.*;
@@ -31,6 +32,28 @@ public class ChannelAccessAdapter extends Adapter {
     public PVValue getHosted(String channel) throws Exception {
         DBR dbr = caClient.get(channel);
         return convertDBRToPVValue(dbr);
+    }
+
+    @Override
+    public void addHostedChannel(String channel, boolean monitor) {
+        super.addHostedChannel(channel, monitor);
+        if (monitor) {
+            try {
+                caClient.attachMonitor(channel);
+            } catch (Exception e) {
+                Log.error("Failed to attach CA monitor to channel %s".formatted(channel), e);
+            }
+        }
+    }
+
+    @Override
+    public void removeHostedChannel(String channel) {
+        super.removeHostedChannel(channel);
+        try {
+            caClient.detachMonitor(channel);
+        } catch (Exception e) {
+            Log.error("Failed to detach CA monitor from channel %s".formatted(channel), e);
+        }
     }
 
     @Override
@@ -68,8 +91,8 @@ public class ChannelAccessAdapter extends Adapter {
 
         // Extract Status
         if (dbr instanceof STS sts) {
-            pvValue.status = sts.getStatus();
-            pvValue.severity = sts.getSeverity();
+            pvValue.setStatus(sts.getStatus());
+            pvValue.setSeverity(sts.getSeverity());
         }
 
         // Extract Time

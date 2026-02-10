@@ -14,8 +14,8 @@ public class PVValue {
 
     public int type;
     public Instant timestamp;
-    public Status status;
-    public Severity severity;
+    public int status;
+    public int severity;
     public PVMetadata metadata = new PVMetadata();
 
     @JsonIgnore
@@ -24,8 +24,6 @@ public class PVValue {
         this.type = type.getValue();
         this.metadata = metadata;
         this.timestamp = Instant.now();
-        this.status = Status.NO_ALARM;
-        this.severity = Severity.NO_ALARM;
     }
 
     @JsonIgnore
@@ -36,6 +34,26 @@ public class PVValue {
     @JsonIgnore
     public DBRType getDBRType(){
         return DBRType.forValue(type);
+    }
+
+    @JsonIgnore
+    public Status getStatus(){
+        return Status.forValue(status);
+    }
+
+    @JsonIgnore
+    public void setStatus(Status status){
+        this.status = status.getValue();
+    }
+
+    @JsonIgnore
+    public Severity getSeverity(){
+        return Severity.forValue(severity);
+    }
+
+    @JsonIgnore
+    public void setSeverity(Severity severity){
+        this.severity = severity.getValue();
     }
 
     @JsonIgnore
