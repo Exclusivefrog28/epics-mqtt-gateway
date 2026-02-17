@@ -2,27 +2,27 @@ package org.excf.epicsmqtt.gateway.bridge;
 
 import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import gov.aps.jca.configuration.DefaultConfiguration;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_String;
+import io.quarkus.runtime.StartupEvent;
 import io.quarkus.test.junit.QuarkusTest;
-import io.smallrye.reactive.messaging.mqtt.MqttMessage;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PVValue;
+import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.concurrent.CompletionStage;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
@@ -36,8 +36,7 @@ public class ChannelAccessEnumTest {
     ChannelAccessAdapter adapter;
 
     @Inject
-    @org.eclipse.microprofile.reactive.messaging.Channel("data-out")
-    Emitter<byte[]> emitter;
+    MqttService mqttService;
 
     @Inject
     ObjectMapper mapper;
@@ -62,7 +61,7 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
 
         bridge.registerHosted(channel);
-        emitter.send(MqttMessage.of(channel.mqttTopic, mapper.writeValueAsBytes(pvValue)));
+        mqttService.publish(channel.mqttTopic, pvValue);
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
@@ -71,7 +70,7 @@ public class ChannelAccessEnumTest {
                 });
 
         pvValue.value = new short[]{0};
-        emitter.send(MqttMessage.of(channel.mqttTopic, mapper.writeValueAsBytes(pvValue)));
+        mqttService.publish(channel.mqttTopic, pvValue);
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
@@ -157,13 +156,15 @@ public class ChannelAccessEnumTest {
     @ApplicationScoped
     public static class BrokerSpy {
 
+        @Inject
+        MqttService mqttService;
+
         private volatile byte[] lastMessage;
 
-        @Incoming("data-in")
-        public CompletionStage<Void> listen(MqttMessage<byte[]> message) {
-            this.lastMessage = message.getPayload();
-
-            return message.ack();
+        void subscribe(@Observes StartupEvent ev) {
+            mqttService.subscribe("pv/+")
+                    .map(Mqtt5Publish::getPayloadAsBytes)
+                    .subscribe().with(bytes -> lastMessage = bytes);
         }
 
         public byte[] getLastMessage() {

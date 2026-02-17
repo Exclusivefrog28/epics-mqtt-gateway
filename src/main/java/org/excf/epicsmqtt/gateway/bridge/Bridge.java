@@ -2,24 +2,22 @@ package org.excf.epicsmqtt.gateway.bridge;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.ShutdownEvent;
-import io.smallrye.reactive.messaging.mqtt.MqttMessage;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PVValue;
+import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
@@ -37,8 +35,7 @@ public class Bridge {
     Instance<Adapter> adapterInstances;
 
     @Inject
-    @org.eclipse.microprofile.reactive.messaging.Channel("data-out")
-    Emitter<byte[]> emitter;
+    MqttService mqttService;
 
     void onStop(@Observes ShutdownEvent ev) {
     }
@@ -51,6 +48,7 @@ public class Bridge {
                 adapters.put(channel.pvName, a);
             }
         }
+        mqttService.subscribe(channel.mqttTopic).subscribe().with(this::handleMessage, e -> Log.error("Stream error", e));
     }
 
     public void registerExternal(ExternalChannel channel) {
@@ -61,20 +59,19 @@ public class Bridge {
                 adapters.put(channel.pvName, a);
             }
         }
+        mqttService.subscribe(channel.mqttTopic).subscribe().with(this::handleMessage, e -> Log.error("Stream error", e));
     }
 
-    @Incoming("data-in")
-    public CompletionStage<Void> consume(MqttMessage<byte[]> message) {
-        String topic = message.getTopic();
-        Log.info("Topic: %s".formatted(topic));
+    public void handleMessage(Mqtt5Publish message) {
+        String topic = message.getTopic().toString();
 
         ExternalChannel channel = topicMap.get(topic);
         if (channel == null) {
-            return message.ack();
+            return;
         }
 
         try {
-            PVValue pvValue = mapper.readValue(message.getPayload(), PVValue.class);
+            PVValue pvValue = mapper.readValue(message.getPayloadAsBytes(), PVValue.class);
 
             if (adapters.containsKey(channel.pvName)) {
                 Adapter adapter = adapters.get(channel.pvName);
@@ -87,8 +84,7 @@ public class Bridge {
         } catch (Exception e) {
             Log.error("Error processing MQTT message", e);
         }
-
-        return message.ack();
+        ;
     }
 
     public PVValue getExternal(String channel) {
@@ -97,7 +93,7 @@ public class Bridge {
 
     public void put(String pvName, PVValue value) {
         try {
-            emitter.send(MqttMessage.of(getChannel(pvName).mqttTopic, mapper.writeValueAsBytes(value)));
+            mqttService.publish(getChannel(pvName).mqttTopic, value);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Cannot serialize PVValue", e);
         }
