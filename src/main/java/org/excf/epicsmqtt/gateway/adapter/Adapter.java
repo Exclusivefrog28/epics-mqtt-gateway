@@ -1,6 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter;
 
-import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
@@ -24,11 +24,11 @@ public abstract class Adapter {
         externalChannels.add(channel);
     }
 
-    public void removeHostedChannel(String channel){
+    public void removeHostedChannel(String channel) {
         hostedChannels.remove(channel);
     }
 
-    public void removeExternalChannel(String channel){
+    public void removeExternalChannel(String channel) {
         externalChannels.remove(channel);
     }
 
@@ -52,8 +52,16 @@ public abstract class Adapter {
         return bridge.getExternal(channel);
     }
 
+    public Uni<PVValue> getExternalAsync(String channel) {
+        return bridge.getExternalAsync(channel);
+    }
+
     public void putExternal(String channel, PVValue value) {
         bridge.putExternal(channel, value);
+    }
+
+    public Uni<Void> putExternalAsync(String channel, PVValue value) {
+        return bridge.putExternalAsync(channel, value);
     }
 
     public void put(String channel, PVValue value) {

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
@@ -72,7 +73,7 @@ public class ChannelAccessCoreTest {
         pvValue.value = new int[]{randomInt};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic, pvValue);
+        mqttService.publish(channel.mqttTopic, pvValue).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
@@ -187,16 +188,17 @@ public class ChannelAccessCoreTest {
         @Inject
         MqttService mqttService;
 
-        private volatile byte[] lastMessage;
+        private final AtomicReference<byte[]> lastMessage = new AtomicReference<>();;
 
         void subscribe(@Observes StartupEvent ev) {
             mqttService.subscribe("pv/+")
                     .map(Mqtt5Publish::getPayloadAsBytes)
-                    .subscribe().with(bytes -> lastMessage = bytes);
+                    .onItem().invoke(lastMessage::set)
+                    .subscribe().with(unused -> {});
         }
 
         public byte[] getLastMessage() {
-            return lastMessage;
+            return lastMessage.get();
         }
     }
 }

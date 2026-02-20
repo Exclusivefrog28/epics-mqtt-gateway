@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.ShutdownEvent;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
@@ -91,9 +92,22 @@ public class Bridge {
         return externalChannelValues.get(channel);
     }
 
+    public Uni<PVValue> getExternalAsync(String channel) {
+        return Uni.createFrom().item(() -> getExternal(channel));
+    }
+
     public void put(String pvName, PVValue value) {
         try {
-            mqttService.publish(getChannel(pvName).mqttTopic, value);
+            mqttService.publish(getChannel(pvName).mqttTopic, value)
+                    .await().indefinitely();
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Cannot serialize PVValue", e);
+        }
+    }
+
+    public Uni<Void> putAsync(String pvName, PVValue value) {
+        try {
+            return mqttService.publish(getChannel(pvName).mqttTopic, value);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Cannot serialize PVValue", e);
         }
@@ -102,6 +116,11 @@ public class Bridge {
     public void putExternal(String pvName, PVValue value) {
         externalChannelValues.put(pvName, value);
         put(pvName, value);
+    }
+
+    public Uni<Void> putExternalAsync(String pvName, PVValue value) {
+        externalChannelValues.put(pvName, value);
+        return putAsync(pvName, value);
     }
 
     public ExternalChannel getChannel(String pvName) {

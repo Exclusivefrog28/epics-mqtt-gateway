@@ -16,7 +16,6 @@ import io.quarkus.scheduler.Scheduled;
 import io.reactivex.Flowable;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.operators.multi.processors.UnicastProcessor;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -47,8 +46,6 @@ public class MqttService {
 
     private Mqtt5RxClient client;
 
-    private final UnicastProcessor<Mqtt5Publish> outBoundQueue = UnicastProcessor.create();
-
     @PostConstruct
     void init() {
         Log.info("Initializing MQTT Client...");
@@ -61,11 +58,6 @@ public class MqttService {
                 .sslWithDefaultConfig()
                 .automaticReconnectWithDefaultConfig()
                 .buildRx();
-
-        outBoundQueue.onItem().transformToUniAndConcatenate(this::tryPublish)
-                .subscribe().with(unused -> {
-                        },
-                        failure -> Log.error("Critical error in publisher pipeline", failure));
     }
 
     void onStart(@Observes StartupEvent ev) {
@@ -96,36 +88,39 @@ public class MqttService {
         );
     }
 
-    public void publish(String topic, PVValue pvValue) throws JsonProcessingException {
-        outBoundQueue.onNext(
-                Mqtt5Publish.builder()
-                        .topic(topic)
-                        .qos(MqttQos.AT_LEAST_ONCE)
-                        .retain(true)
-                        .payload(mapper.writeValueAsBytes(pvValue))
-                        .build()
-        );
+    public Uni<Void> publish(String topic, PVValue pvValue) throws JsonProcessingException {
+        byte[] payload = mapper.writeValueAsBytes(pvValue);
+
+        return doPublish(topic, payload);
     }
 
-    private Uni<Void> tryPublish(Mqtt5Publish message) {
+    private Uni<Void> doPublish(String topic, byte[] payload) {
         return Uni.createFrom().deferred(() -> {
                     if (client == null || !client.getState().isConnected())
                         return Uni.createFrom().failure(new RuntimeException("Client Disconnected"));
 
                     return Uni.createFrom().publisher(
                             FlowAdapters.toFlowPublisher(
-                                    client.publish(Flowable.just(message))
+                                    client.publish(Flowable.just(
+                                            Mqtt5Publish.builder()
+                                                    .topic(topic)
+                                                    .qos(MqttQos.AT_LEAST_ONCE)
+                                                    .retain(true)
+                                                    .payload(payload)
+                                                    .build()
+                                    ))
                             )
                     );
                 })
+                .onFailure().invoke(th -> Log.warnf("MQTT publish failed, retrying..."))
                 .onFailure().retry()
                 .withBackOff(Duration.ofSeconds(1))
-                .indefinitely()
+                .atMost(10)
                 .replaceWithVoid();
     }
 
 
-    @Scheduled(every = "30s", delayed = "20s")
+    @Scheduled(every = "4m", delayed = "4m")
     void refreshAuth() {
         Log.info("Refreshing OIDC Token...");
         connectWithFreshToken().subscribe().with(
