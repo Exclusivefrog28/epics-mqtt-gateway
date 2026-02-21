@@ -1,5 +1,6 @@
 package org.excf.epicsmqtt.gateway.bridge;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
@@ -17,9 +18,11 @@ import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 
 @ApplicationScoped
 public class Bridge {
@@ -49,7 +52,13 @@ public class Bridge {
                 adapters.put(channel.pvName, a);
             }
         }
-        mqttService.subscribe(channel.mqttTopic).subscribe().with(this::handleMessage, e -> Log.error("Stream error", e));
+        mqttService.subscribe(channel.mqttTopic)
+                .onItem().transformToUniAndConcatenate(this::handleMessage)
+                .subscribe().with(
+                        unused -> {
+                        },
+                        e -> Log.error("MQTT stream error", e)
+                );
     }
 
     public void registerExternal(ExternalChannel channel) {
@@ -63,31 +72,50 @@ public class Bridge {
         mqttService.subscribe(channel.mqttTopic).subscribe().with(this::handleMessage, e -> Log.error("Stream error", e));
     }
 
-    public void handleMessage(Mqtt5Publish message) {
+    public Uni<Void> handleMessage(Mqtt5Publish message) {
         String topic = message.getTopic().toString();
 
         ExternalChannel channel = topicMap.get(topic);
         if (channel == null) {
-            return;
+            return Uni.createFrom().failure(new IllegalArgumentException("No channel registered for topic " + topic));
         }
+        PVValue pvValue;
 
         try {
-            PVValue pvValue = mapper.readValue(message.getPayloadAsBytes(), PVValue.class);
+            pvValue = mapper.readValue(message.getPayloadAsBytes(), PVValue.class);
 
-            if (adapters.containsKey(channel.pvName)) {
-                Adapter adapter = adapters.get(channel.pvName);
-
-                if (adapter.hostsChannel(channel.pvName) && channel instanceof HostedChannel hostedChannel) {
-                    if (!hostedChannel.monitor) adapter.putHosted(channel.pvName, pvValue);
-                } else
-                    externalChannelValues.put(channel.pvName, pvValue);
-            }
         } catch (Exception e) {
             Log.error("Error processing MQTT message", e);
+            return Uni.createFrom().failure(new JsonParseException("No channel registered for topic " + topic));
         }
-        ;
+
+        if (adapters.containsKey(channel.pvName)) {
+            Adapter adapter = adapters.get(channel.pvName);
+
+            if (adapter.hostsChannel(channel.pvName) && channel instanceof HostedChannel hostedChannel) {
+                // TODO: handle non-monitoring hosted channels, without infinite calls
+                if (!hostedChannel.monitor)
+                    return adapter.putHosted(channel.pvName, pvValue)
+                            .ifNoItem().after(Duration.ofSeconds(1)).failWith(TimeoutException::new).onFailure().recoverWithNull();
+            } else
+                externalChannelValues.put(channel.pvName, pvValue);
+
+            return Uni.createFrom().voidItem();
+        }
+
+        return Uni.createFrom().failure(new IllegalArgumentException("No adapter registered for channel " + channel.pvName));
     }
 
+    /**
+     * Only retrieves the in-memory value for the PV
+     */
+    public PVValue getExternalCached(String channel) {
+        return externalChannelValues.get(channel);
+    }
+
+    /**
+     * TODO: do an MQTT call if the PV isn't monitored
+     */
     public PVValue getExternal(String channel) {
         return externalChannelValues.get(channel);
     }

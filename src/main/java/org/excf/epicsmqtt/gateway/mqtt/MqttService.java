@@ -79,6 +79,7 @@ public class MqttService {
     public Multi<Mqtt5Publish> subscribe(String topicFilter) {
         Mqtt5Subscribe subscribeMessage = Mqtt5Subscribe.builder()
                 .topicFilter(topicFilter)
+                .qos(MqttQos.AT_LEAST_ONCE)
                 .build();
 
         return Multi.createFrom().publisher(
@@ -90,7 +91,6 @@ public class MqttService {
 
     public Uni<Void> publish(String topic, PVValue pvValue) throws JsonProcessingException {
         byte[] payload = mapper.writeValueAsBytes(pvValue);
-
         return doPublish(topic, payload);
     }
 
@@ -112,9 +112,9 @@ public class MqttService {
                             )
                     );
                 })
-                .onFailure().invoke(th -> Log.warnf("MQTT publish failed, retrying..."))
+                .onFailure().invoke(th -> Log.warn("MQTT publish failed, retrying..."))
                 .onFailure().retry()
-                .withBackOff(Duration.ofSeconds(1))
+                .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(2))
                 .atMost(10)
                 .replaceWithVoid();
     }

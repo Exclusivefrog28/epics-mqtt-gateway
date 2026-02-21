@@ -1,17 +1,25 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
-import com.cosylab.epics.caj.CAJContext;
-import gov.aps.jca.*;
+import gov.aps.jca.CAException;
+import gov.aps.jca.Channel;
+import gov.aps.jca.Context;
+import gov.aps.jca.Monitor;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
+import gov.aps.jca.event.ConnectionEvent;
+import gov.aps.jca.event.ConnectionListener;
+import gov.aps.jca.event.PutListener;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CAClient {
     Context context;
 
-    ConcurrentHashMap<String, Channel> openChannels;
+    ConcurrentHashMap<String, Uni<Channel>> openChannels;
     ConcurrentHashMap<String, Monitor> openMonitors;
 
     private final ChannelAccessAdapter adapter;
@@ -23,98 +31,164 @@ public class CAClient {
         openMonitors = new ConcurrentHashMap<>();
     }
 
-    public synchronized DBR get(String channelName) throws CAException, TimeoutException {
-        Channel channel = accessOrOpenChannel(channelName);
-        context.pendIO(5.0);
+    public Uni<DBR> get(String channelName) {
+        return accessOrOpenChannel(channelName)
+                .onItem().transformToUni(channel ->
+                        Uni.createFrom().emitter(emitter -> {
+                            try {
+                                DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
 
-        DBR dbr = channel.get(DBRType.forValue(channel.getFieldType().getValue() + 28), channel.getElementCount());
-        context.pendIO(5.0);
+                                channel.get(type, channel.getElementCount(), ev -> {
+                                    if (ev.getStatus().isSuccessful()) emitter.complete(ev.getDBR());
+                                    else emitter.fail(new IOException("CA Get failed: " + ev.getStatus()));
+                                });
 
-        context.flushIO();
-        tryCloseChannel(channel);
-        return dbr;
+                                context.flushIO();
+                            } catch (Exception e) {
+                                emitter.fail(e);
+                            }
+                        })
+                );
     }
 
-    public synchronized DBR get(String channelName, DBRType type) throws CAException, TimeoutException {
-        Channel channel = accessOrOpenChannel(channelName);
-        context.pendIO(5.0);
+    public Uni<DBR> get(String channelName, DBRType type) {
+        return accessOrOpenChannel(channelName)
+                .onItem().transformToUni(channel ->
+                        Uni.createFrom().emitter(emitter -> {
+                            try {
+                                channel.get(type, channel.getElementCount(), ev -> {
+                                    if (ev.getStatus().isSuccessful()) emitter.complete(ev.getDBR());
+                                    else emitter.fail(new IOException("CA Get failed: " + ev.getStatus()));
+                                });
 
-        DBR dbr = channel.get(type, channel.getElementCount());
-        context.pendIO(5.0);
-
-        context.flushIO();
-        tryCloseChannel(channel);
-        return dbr;
+                                context.flushIO();
+                            } catch (Exception e) {
+                                emitter.fail(e);
+                            }
+                        })
+                );
     }
 
-    public synchronized void attachMonitor(String channelName) throws CAException, TimeoutException {
-        Channel channel = accessOrOpenChannel(channelName);
-        context.pendIO(5.0);
-        channel.printInfo();
+    public Uni<Void> attachMonitor(String channelName) {
+        return accessOrOpenChannel(channelName)
+                .onItem().transformToUni(channel ->
+                        Uni.createFrom().emitter(emitter -> {
+                            if (openMonitors.containsKey(channelName)) {
+                                emitter.complete(null);
+                                return;
+                            }
 
-        openMonitors.computeIfAbsent(channelName, c -> {
+                            try {
+                                DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
+                                Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE,
+
+                                        ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())).subscribe().with(
+                                                unused -> {
+                                                },
+                                                failure -> Log.errorf("Failed to send monitored value on channel %s", channelName, failure)
+                                        )
+                                );
+                                openMonitors.put(channelName, monitor);
+
+                                context.flushIO();
+                                emitter.complete(null);
+                            } catch (Exception e) {
+                                emitter.fail(e);
+                            }
+                        })
+                );
+    }
+
+    public void detachMonitor(String channelName) {
+        Monitor monitor = openMonitors.remove(channelName);
+        if (monitor != null) {
             try {
-                return channel.addMonitor(DBRType.forValue(channel.getFieldType().getValue() + 28), channel.getElementCount(), Monitor.VALUE,
-                        ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())));
+                monitor.clear();
+                context.flushIO();
             } catch (CAException e) {
-                Log.warn("Couldn't attach monitor to %s".formatted(channelName));
-                throw new RuntimeException(e);
+                Log.errorf(e, "Failed to clear monitor for %s", channelName);
             }
-        });
-
-        context.pendIO(5.0);
-        context.flushIO();
-    }
-
-    public synchronized void detachMonitor(String channelName) throws CAException {
-        if (openMonitors.containsKey(channelName)) {
-            openMonitors.get(channelName).clear();
-            openMonitors.remove(channelName);
-        }
-
-        tryCloseChannel(channelName);
-    }
-
-    public synchronized void put(String channelName, Object value) throws CAException, TimeoutException {
-        Channel channel = accessOrOpenChannel(channelName);
-        context.pendIO(5.0);
-
-        switch (value) {
-            case int[] ig -> channel.put(ig);
-            case double[] du -> channel.put(du);
-            case byte[] by -> channel.put(by);
-            case short[] sh -> channel.put(sh);
-            case float[] fl -> channel.put(fl);
-            case String[] st -> channel.put(st);
-            default -> throw new IllegalStateException("Unexpected value: " + value);
-        }
-        context.pendIO(5.0);
-
-        context.flushIO();
-
-        tryCloseChannel(channel);
-    }
-
-    private Channel accessOrOpenChannel(String channelName) {
-        return openChannels.computeIfAbsent(channelName, name -> {
-            try {
-                return context.createChannel(name);
-            } catch (CAException e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
-    private void tryCloseChannel(String channelName) throws CAException {
-        if (openChannels.containsKey(channelName))
-            tryCloseChannel(openChannels.get(channelName));
-    }
-
-    private void tryCloseChannel(Channel channel) throws CAException {
-        if (!openMonitors.containsKey(channel.getName())) {
-            channel.destroy();
-            openChannels.remove(channel.getName());
         }
     }
 
+    public Uni<Void> put(String channelName, Object value) {
+        return accessOrOpenChannel(channelName)
+                .onItem().transformToUni(channel ->
+                        Uni.createFrom().emitter(emitter -> {
+                            try {
+                                PutListener listener = ev -> {
+                                    Infrastructure.getDefaultExecutor().execute(() -> {
+                                        if (ev.getStatus().isSuccessful()) {
+                                            emitter.complete(null);
+                                        } else {
+                                            emitter.fail(new IOException("CA Put failed: " + ev.getStatus()));
+                                        }
+                                    });
+                                };
+
+                                switch (value) {
+                                    case int[] ig -> channel.put(ig, listener);
+                                    case double[] du -> channel.put(du, listener);
+                                    case byte[] by -> channel.put(by, listener);
+                                    case short[] sh -> channel.put(sh, listener);
+                                    case float[] fl -> channel.put(fl, listener);
+                                    case String[] st -> channel.put(st, listener);
+                                    default -> emitter.fail(new IllegalStateException("Unexpected value: " + value));
+                                }
+
+                                context.flushIO();
+                            } catch (Exception e) {
+                                emitter.fail(e);
+                            }
+                        })
+                );
+    }
+
+    private Uni<Channel> accessOrOpenChannel(String channelName) {
+        return openChannels.computeIfAbsent(channelName, name ->
+                Uni.createFrom().<Channel>emitter(emitter ->
+                        {
+                            try {
+                                Channel channel = context.createChannel(name);
+
+                                if (channel.getConnectionState() == Channel.CONNECTED) {
+                                    emitter.complete(channel);
+                                    return;
+                                }
+
+                                channel.addConnectionListener(new ConnectionListener() {
+                                    @Override
+                                    public void connectionChanged(ConnectionEvent ev) {
+                                        if (ev.isConnected()) {
+                                            try {
+                                                channel.removeConnectionListener(this);
+                                                emitter.complete(channel);
+                                            } catch (CAException e) {
+                                                throw new RuntimeException(e);
+                                            }
+                                        }
+                                    }
+                                });
+
+                                context.flushIO();
+                            } catch (CAException e) {
+                                emitter.fail(e);
+                                openChannels.remove(channelName);
+                            }
+                        })
+                        .memoize()
+                        .indefinitely()
+        );
+    }
+
+    public void shutDown() throws CAException {
+        for (String channel : openMonitors.keySet()) {
+            detachMonitor(channel);
+        }
+
+        openMonitors.clear();
+        openChannels.clear();
+
+        context.destroy();
+    }
 }

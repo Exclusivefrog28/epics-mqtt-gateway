@@ -91,7 +91,7 @@ public class CAServer implements Server {
                                 },
                                 failure -> {
                                     Log.errorf(failure, "Async write failed for %s", name);
-                                    writeCallback.processVariableWriteCompleted(CAStatus.DEFUNCT);
+                                    writeCallback.processVariableWriteCompleted(CAStatus.TIMEOUT);
                                 }
                         );
 
@@ -106,7 +106,7 @@ public class CAServer implements Server {
     private void fillDBR(DBR dbr, PVValue pvValue) {
         PrimitiveConverter.toPrimitiveArray(pvValue.value, dbr.getValue());
 
-        // Extract Metadata
+        // extract metadata
         if (dbr instanceof GR gr) {
             gr.setUnits(pvValue.metadata.units);
             gr.setUpperDispLimit(pvValue.metadata.upperDisplayLimit);
@@ -117,28 +117,29 @@ public class CAServer implements Server {
             gr.setLowerAlarmLimit(pvValue.metadata.lowerAlarmLimit);
         }
 
-        // Extract precision
+        // extract precision
         if (dbr instanceof PRECISION pr) {
             pr.setPrecision((short) (int) pvValue.metadata.precision);
         }
 
-        // Extract control
+        // extract control
         if (dbr instanceof CTRL ctrl) {
             ctrl.setLowerCtrlLimit(pvValue.metadata.lowerControlLimit);
             ctrl.setUpperCtrlLimit(pvValue.metadata.upperControlLimit);
         }
 
-        // Extract Status
+        // extract status
         if (dbr instanceof STS sts) {
             sts.setStatus(pvValue.getStatus());
             sts.setSeverity(pvValue.getSeverity());
         }
 
-        // Extract Time
+        // extract time
         if (dbr instanceof TIME t) {
             t.setTimeStamp(new TimeStamp(pvValue.timestamp.getEpochSecond(), pvValue.timestamp.getNano()));
         }
 
+        // extract enum labels
         if (dbr instanceof LABELS l) {
             l.setLabels(pvValue.metadata.labels);
         }

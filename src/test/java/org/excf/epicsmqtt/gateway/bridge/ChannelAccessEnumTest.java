@@ -53,8 +53,8 @@ public class ChannelAccessEnumTest {
 
         HostedChannel channel = new HostedChannel();
         channel.alias = "test_alias";
-        channel.mqttTopic = "pv/acquire";
-        channel.pvName = "BL01T-DI-CAM-01:DET:Acquire";
+        channel.mqttTopic = "pv/colormode";
+        channel.pvName = "BL01T-DI-CAM-01:DET:ColorMode";
         channel.mode = Mode.READ_ONLY;
 
         PVValue pvValue = new PVValue();
@@ -66,17 +66,17 @@ public class ChannelAccessEnumTest {
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
-                    PVValue response = adapter.getHosted(channel.pvName);
-                    Assertions.assertEquals("Acquire", response.metadata.labels[((short[]) response.value)[0]]);
+                    PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
+                    Assertions.assertEquals("RGB1", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
-        pvValue.value = new short[]{0};
+        pvValue.value = new short[]{2};
         mqttService.publish(channel.mqttTopic, pvValue).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
-                    PVValue response = adapter.getHosted(channel.pvName);
-                    Assertions.assertEquals("Done", response.metadata.labels[((short[]) response.value)[0]]);
+                    PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
+                    Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
                 });
     }
 
@@ -108,7 +108,7 @@ public class ChannelAccessEnumTest {
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
-                    DBR dbr = caClient.get(channel.pvName, DBRType.STRING);
+                    DBR dbr = caClient.get(channel.pvName, DBRType.STRING).await().indefinitely();
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
                 });
     }
@@ -144,7 +144,7 @@ public class ChannelAccessEnumTest {
         // Some value needs to exist in MQTT already to know its type
         bridge.putExternal(channel.pvName, pvValue);
 
-        caClient.put(channel.pvName, new String[]{"Good"});
+        caClient.put(channel.pvName, new String[]{"Good"}).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
@@ -160,13 +160,15 @@ public class ChannelAccessEnumTest {
         @Inject
         MqttService mqttService;
 
-        private final AtomicReference<byte[]> lastMessage = new AtomicReference<>();;
+        private final AtomicReference<byte[]> lastMessage = new AtomicReference<>();
+        ;
 
         void subscribe(@Observes StartupEvent ev) {
             mqttService.subscribe("pv/+")
                     .map(Mqtt5Publish::getPayloadAsBytes)
                     .onItem().invoke(lastMessage::set)
-                    .subscribe().with(unused -> {});
+                    .subscribe().with(unused -> {
+                    });
         }
 
         public byte[] getLastMessage() {

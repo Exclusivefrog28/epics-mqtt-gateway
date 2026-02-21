@@ -1,10 +1,10 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
-import com.cosylab.epics.caj.CAJContext;
 import gov.aps.jca.JCALibrary;
 import gov.aps.jca.cas.ServerContext;
 import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,9 +29,8 @@ public class ChannelAccessAdapter extends Adapter {
     private Thread caServerThread;
 
     @Override
-    public PVValue getHosted(String channel) throws Exception {
-        DBR dbr = caClient.get(channel);
-        return convertDBRToPVValue(dbr);
+    public Uni<PVValue> getHosted(String channel) {
+        return caClient.get(channel).onItem().transform(this::convertDBRToPVValue);
     }
 
     @Override
@@ -39,7 +38,7 @@ public class ChannelAccessAdapter extends Adapter {
         super.addHostedChannel(channel, monitor);
         if (monitor) {
             try {
-                caClient.attachMonitor(channel);
+                caClient.attachMonitor(channel).await().indefinitely();
             } catch (Exception e) {
                 Log.error("Failed to attach CA monitor to channel %s".formatted(channel), e);
             }
@@ -57,8 +56,8 @@ public class ChannelAccessAdapter extends Adapter {
     }
 
     @Override
-    public void putHosted(String channel, PVValue value) throws Exception {
-        caClient.put(channel, value.value);
+    public Uni<Void> putHosted(String channel, PVValue value) {
+        return caClient.put(channel, value.value);
     }
 
     PVValue convertDBRToPVValue(DBR dbr) {
@@ -143,10 +142,13 @@ public class ChannelAccessAdapter extends Adapter {
             }
             if (caServer != null)
                 caServer.destroy();
-            if (caClient != null && caClient.context != null)
-                caClient.context.destroy();
         } catch (Exception e) {
-            Log.error("ChannelAccessAdatper didn't shut down gracefully", e);
+            Log.error("CA server didn't shut down gracefully", e);
+        }
+        try {
+            if (caClient != null) caClient.shutDown();
+        } catch (Exception e) {
+            Log.error("CA client didn't shut down gracefully", e);
         }
     }
 }

@@ -77,7 +77,7 @@ public class ChannelAccessCoreTest {
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
-                        ((int[]) adapter.getHosted(channel.pvName).value)[0]));
+                        ((int[]) adapter.getHosted(channel.pvName).await().indefinitely().value)[0]));
     }
 
     /**
@@ -135,7 +135,7 @@ public class ChannelAccessCoreTest {
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
-                    DBR dbr = caClient.get(channel.pvName);
+                    DBR dbr = caClient.get(channel.pvName).await().indefinitely();
                     Assertions.assertInstanceOf(DBR_Double.class, dbr);
                     Assertions.assertEquals(((double[]) pvValue.value)[0], ((double[]) dbr.getValue())[0], 0.001);
                 });
@@ -168,11 +168,11 @@ public class ChannelAccessCoreTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.putExternal(channel.pvName, pvValue);
+        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
 
         double[] testValue = new double[]{new Random().nextDouble(0, 100)};
 
-        caClient.put(channel.pvName, testValue);
+        caClient.put(channel.pvName, testValue).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {

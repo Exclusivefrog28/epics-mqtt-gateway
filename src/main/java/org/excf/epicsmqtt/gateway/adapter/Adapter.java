@@ -40,11 +40,11 @@ public abstract class Adapter {
         return externalChannels.contains(channel);
     }
 
-    public PVValue getHosted(String channel) throws Exception {
+    public Uni<PVValue> getHosted(String channel) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public void putHosted(String channel, PVValue value) throws Exception {
+    public Uni<Void> putHosted(String channel, PVValue value) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
@@ -64,8 +64,8 @@ public abstract class Adapter {
         return bridge.putExternalAsync(channel, value);
     }
 
-    public void put(String channel, PVValue value) {
-        bridge.put(channel, value);
+    public Uni<Void> put(String channel, PVValue value) {
+        return bridge.putAsync(channel, value);
     }
 
 
