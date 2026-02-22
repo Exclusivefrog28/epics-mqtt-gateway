@@ -13,7 +13,6 @@ import io.quarkus.logging.Log;
 import io.quarkus.oidc.client.OidcClient;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
-import io.quarkus.scheduler.Scheduled;
 import io.reactivex.Flowable;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
@@ -63,10 +62,12 @@ public class MqttService {
     void onStart(@Observes StartupEvent ev) {
         Log.info("Connecting MQTT client for the first time");
 
-        connectWithFreshToken().subscribe().with(
-                success -> Log.info("MQTT Initial Connection Successful"),
-                failure -> Log.error("MQTT Initial Connection Failed", failure)
-        );
+        tokenRefreshLoop()
+                .subscribe().with(
+                        unused -> {
+                        },
+                        failure -> Log.error("Unrecoverable error in auth loop.", failure)
+                );
     }
 
     void onStop(@Observes ShutdownEvent ev) {
@@ -89,7 +90,7 @@ public class MqttService {
         );
     }
 
-    public void unsubscribe(String topicFilter){
+    public void unsubscribe(String topicFilter) {
         Uni.createFrom().publisher(
                 FlowAdapters.toFlowPublisher(
                         client.unsubscribeWith().topicFilter(topicFilter).applyUnsubscribe().toFlowable()
@@ -127,20 +128,31 @@ public class MqttService {
                 .replaceWithVoid();
     }
 
+    private Uni<Void> tokenRefreshLoop() {
+        return oidcClient.getTokens()
+                .onFailure().retry()
+                .withBackOff(Duration.ofSeconds(2), Duration.ofSeconds(15))
+                .atMost(5)
+                .chain(tokens -> {
+                    Log.info("Token acquired");
+                    String accessToken = tokens.getAccessToken();
 
-    @Scheduled(every = "10s", delayed = "10s")
-    void refreshAuth() {
-        Log.info("Refreshing OIDC Token...");
-        connectWithFreshToken().subscribe().with(
-                success -> Log.info("Token refreshed and client re-connected."),
-                failure -> Log.error("Token refresh failed", failure)
-        );
+                    return reconnectMqttClient(accessToken)
+                            .chain(() -> {
+                                // next refresh 30 seconds before the token expires
+                                long delayToNextRefresh = Math.max(1, tokens.getAccessTokenExpiresAt() - System.currentTimeMillis() / 1000 - 30);
+                                Log.info("MQTT Connected. Next refresh scheduled in %d seconds.".formatted(delayToNextRefresh));
+
+                                return Uni.createFrom().voidItem()
+                                        .onItem().delayIt().by(Duration.ofSeconds(delayToNextRefresh))
+                                        .onItem().invoke(unused -> Log.info("Refreshing MQTT connection..."))
+                                        .chain(this::tokenRefreshLoop);
+                            });
+                });
     }
 
-    private Uni<Boolean> connectWithFreshToken() {
-        return oidcClient.getTokens()
-                .chain(tokens -> {
-                    String accessToken = tokens.getAccessToken();
+    private Uni<Void> reconnectMqttClient(String accessToken) {
+        return Uni.createFrom().deferred(() -> {
 
                     Mqtt5Connect connectMsg = Mqtt5Connect.builder()
                             .cleanStart(false)
@@ -153,19 +165,21 @@ public class MqttService {
 
                     Uni<Void> disconnectStep = Uni.createFrom().voidItem();
 
-                    if (!(client.getState() == MqttClientState.DISCONNECTED)) {
+                    if (client.getState() != MqttClientState.DISCONNECTED) {
                         disconnectStep = Uni.createFrom().publisher(
                                 FlowAdapters.toFlowPublisher(client.disconnect().toFlowable())
-                        )
-                                .replaceWithVoid().onFailure().recoverWithNull();
+                        ).onFailure().recoverWithNull().replaceWithVoid();
                     }
 
                     return disconnectStep
                             .chain(() -> Uni.createFrom().publisher(
                                     FlowAdapters.toFlowPublisher(client.connect(connectMsg).toFlowable())
                             ))
-                            .map(connAck -> true);
-                });
+                            .replaceWithVoid();
+                })
+                .onFailure().retry()
+                .withBackOff(Duration.ofSeconds(2), Duration.ofSeconds(10))
+                .atMost(5);
     }
 
 
