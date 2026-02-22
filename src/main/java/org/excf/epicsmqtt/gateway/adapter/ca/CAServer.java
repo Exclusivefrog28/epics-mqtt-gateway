@@ -34,7 +34,7 @@ public class CAServer implements Server {
                                                  ProcessVariableAttachCallback processVariableAttachCallback)
             throws IllegalArgumentException, IllegalStateException {
         if (adapter.servesChannel(s)) {
-            return new ReactivePV(s, adapter.getExternal(s));
+            return new ReactivePV(s, adapter.getExternalCached(s));
         }
         return null;
     }
@@ -59,7 +59,7 @@ public class CAServer implements Server {
 
         @Override
         public CAStatus read(DBR dbr, ProcessVariableReadCallback readCallback) {
-            adapter.getExternalAsync(name)
+            adapter.getExternal(name)
                     .emitOn(Infrastructure.getDefaultExecutor())
                     .subscribe().with(
                             pvValue -> {
@@ -84,7 +84,7 @@ public class CAServer implements Server {
             try {
                 PVValue newValue = adapter.convertDBRToPVValue(dbr);
 
-                adapter.putExternalAsync(name, newValue)
+                adapter.putExternal(name, newValue)
                         .subscribe().with(
                                 success -> {
                                     writeCallback.processVariableWriteCompleted(CAStatus.NORMAL);

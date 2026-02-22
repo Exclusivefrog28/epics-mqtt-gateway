@@ -78,6 +78,8 @@ public class ChannelAccessEnumTest {
                     PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
                     Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
                 });
+
+        bridge.removeHosted(channel.pvName);
     }
 
 
@@ -104,13 +106,15 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
         pvValue.metadata.labels = new String[]{"Bad", "Good"};
         pvValue.timestamp = Instant.now();
-        bridge.putExternal(channel.pvName, pvValue);
+        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
                     DBR dbr = caClient.get(channel.pvName, DBRType.STRING).await().indefinitely();
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
                 });
+
+        bridge.removeExternal(channel.pvName);
     }
 
     /**
@@ -142,7 +146,7 @@ public class ChannelAccessEnumTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.putExternal(channel.pvName, pvValue);
+        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
 
         caClient.put(channel.pvName, new String[]{"Good"}).await().indefinitely();
 
@@ -152,6 +156,8 @@ public class ChannelAccessEnumTest {
                     Assertions.assertNotNull(lastMessage);
                     Assertions.assertEquals(1, ((short[]) mapper.readValue(lastMessage, PVValue.class).value)[0]);
                 });
+
+        bridge.removeExternal(channel.pvName);
     }
 
     @ApplicationScoped

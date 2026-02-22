@@ -78,6 +78,8 @@ public class ChannelAccessCoreTest {
         await().atMost(5, SECONDS).untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
                         ((int[]) adapter.getHosted(channel.pvName).await().indefinitely().value)[0]));
+
+        bridge.removeHosted(channel.pvName);
     }
 
     /**
@@ -106,7 +108,7 @@ public class ChannelAccessCoreTest {
                     Assertions.assertTrue(receivedValues.size() > 2);
                 });
 
-        adapter.removeHostedChannel(channel.pvName);
+        bridge.removeHosted(channel.pvName);
     }
 
     /**
@@ -131,7 +133,7 @@ public class ChannelAccessCoreTest {
         pvValue.setDBRType(DBRType.DOUBLE);
         pvValue.value = new double[]{new Random().nextDouble(0, 100)};
         pvValue.timestamp = Instant.now();
-        bridge.putExternal(channel.pvName, pvValue);
+        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
 
         await().atMost(5, SECONDS).untilAsserted(
                 () -> {
@@ -139,6 +141,8 @@ public class ChannelAccessCoreTest {
                     Assertions.assertInstanceOf(DBR_Double.class, dbr);
                     Assertions.assertEquals(((double[]) pvValue.value)[0], ((double[]) dbr.getValue())[0], 0.001);
                 });
+
+        bridge.removeExternal(channel.pvName);
     }
 
     /**
@@ -180,6 +184,8 @@ public class ChannelAccessCoreTest {
                     Assertions.assertNotNull(lastMessage);
                     Assertions.assertEquals(testValue[0], ((double[]) mapper.readValue(lastMessage, PVValue.class).value)[0]);
                 });
+
+        bridge.removeExternal(channel.pvName);
     }
 
     @ApplicationScoped

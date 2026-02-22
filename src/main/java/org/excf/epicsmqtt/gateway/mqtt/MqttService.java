@@ -3,6 +3,7 @@ package org.excf.epicsmqtt.gateway.mqtt;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.MqttClient;
+import com.hivemq.client.mqtt.MqttClientState;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5RxClient;
 import com.hivemq.client.mqtt.mqtt5.message.connect.Mqtt5Connect;
@@ -56,7 +57,6 @@ public class MqttService {
                 .serverHost(host)
                 .serverPort(port)
                 .sslWithDefaultConfig()
-                .automaticReconnectWithDefaultConfig()
                 .buildRx();
     }
 
@@ -87,6 +87,14 @@ public class MqttService {
                         client.subscribePublishes(subscribeMessage)
                 )
         );
+    }
+
+    public void unsubscribe(String topicFilter){
+        Uni.createFrom().publisher(
+                FlowAdapters.toFlowPublisher(
+                        client.unsubscribeWith().topicFilter(topicFilter).applyUnsubscribe().toFlowable()
+                )
+        ).await().indefinitely();
     }
 
     public Uni<Void> publish(String topic, PVValue pvValue) throws JsonProcessingException {
@@ -120,7 +128,7 @@ public class MqttService {
     }
 
 
-    @Scheduled(every = "4m", delayed = "4m")
+    @Scheduled(every = "10s", delayed = "10s")
     void refreshAuth() {
         Log.info("Refreshing OIDC Token...");
         connectWithFreshToken().subscribe().with(
@@ -145,10 +153,11 @@ public class MqttService {
 
                     Uni<Void> disconnectStep = Uni.createFrom().voidItem();
 
-                    if (client.getState().isConnected()) {
+                    if (!(client.getState() == MqttClientState.DISCONNECTED)) {
                         disconnectStep = Uni.createFrom().publisher(
                                 FlowAdapters.toFlowPublisher(client.disconnect().toFlowable())
-                        ).replaceWithVoid();
+                        )
+                                .replaceWithVoid().onFailure().recoverWithNull();
                     }
 
                     return disconnectStep

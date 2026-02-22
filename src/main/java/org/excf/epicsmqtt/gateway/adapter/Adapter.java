@@ -48,24 +48,20 @@ public abstract class Adapter {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public PVValue getExternal(String channel) {
+    public PVValue getExternalCached(String channel) {
+        return bridge.getExternalCached(channel);
+    }
+
+    public Uni<PVValue> getExternal(String channel) {
         return bridge.getExternal(channel);
     }
 
-    public Uni<PVValue> getExternalAsync(String channel) {
-        return bridge.getExternalAsync(channel);
-    }
-
-    public void putExternal(String channel, PVValue value) {
-        bridge.putExternal(channel, value);
-    }
-
-    public Uni<Void> putExternalAsync(String channel, PVValue value) {
+    public Uni<Void> putExternal(String channel, PVValue value) {
         return bridge.putExternalAsync(channel, value);
     }
 
     public Uni<Void> put(String channel, PVValue value) {
-        return bridge.putAsync(channel, value);
+        return bridge.put(channel, value);
     }
 
 

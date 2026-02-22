@@ -85,7 +85,7 @@ public class CAClient {
                                         ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())).subscribe().with(
                                                 unused -> {
                                                 },
-                                                failure -> Log.errorf("Failed to send monitored value on channel %s", channelName, failure)
+                                                failure -> Log.warnf("Failed to send monitored value on channel %s", channelName, failure)
                                         )
                                 );
                                 openMonitors.put(channelName, monitor);
@@ -104,8 +104,9 @@ public class CAClient {
         if (monitor != null) {
             try {
                 monitor.clear();
+                context.pendIO(5000);
                 context.flushIO();
-            } catch (CAException e) {
+            } catch (Exception e) {
                 Log.errorf(e, "Failed to clear monitor for %s", channelName);
             }
         }
