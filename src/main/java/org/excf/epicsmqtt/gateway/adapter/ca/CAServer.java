@@ -6,6 +6,7 @@ import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.enterprise.context.Dependent;
+import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.net.InetSocketAddress;
@@ -24,18 +25,25 @@ public class CAServer implements Server {
     public ProcessVariableExistanceCompletion processVariableExistanceTest(String s,
                                                                            InetSocketAddress inetSocketAddress, ProcessVariableExistanceCallback processVariableExistanceCallback)
             throws IllegalArgumentException, IllegalStateException {
-        if (adapter.servesChannel(s))
-            return ProcessVariableExistanceCompletion.EXISTS_HERE;
-        return ProcessVariableExistanceCompletion.DOES_NOT_EXIST_HERE;
+
+        adapter.getExternalCached(s)
+                .subscribe().with(
+                        pvValue -> processVariableExistanceCallback.processVariableExistanceTestCompleted(ProcessVariableExistanceCompletion.EXISTS_HERE),
+                        failure -> processVariableExistanceCallback.processVariableExistanceTestCompleted(ProcessVariableExistanceCompletion.DOES_NOT_EXIST_HERE)
+                );
+        return ProcessVariableExistanceCompletion.ASYNC_COMPLETION;
     }
 
     @Override
     public ProcessVariable processVariableAttach(String s, ProcessVariableEventCallback processVariableEventCallback,
                                                  ProcessVariableAttachCallback processVariableAttachCallback)
             throws IllegalArgumentException, IllegalStateException {
-        if (adapter.servesChannel(s)) {
-            return new ReactivePV(s, adapter.getExternalCached(s));
-        }
+        adapter.getExternalCached(s)
+                .subscribe().with(
+                        pvValue -> processVariableAttachCallback.processVariableAttachCompleted(new ReactivePV(s, pvValue)),
+                        failure -> processVariableAttachCallback.processVariableAttachCompleted(null)
+                );
+
         return null;
     }
 
@@ -84,7 +92,7 @@ public class CAServer implements Server {
             try {
                 PVValue newValue = adapter.convertDBRToPVValue(dbr);
 
-                adapter.putExternal(name, newValue)
+                adapter.putExternal(new PV(name, newValue))
                         .subscribe().with(
                                 success -> {
                                     writeCallback.processVariableWriteCompleted(CAStatus.NORMAL);

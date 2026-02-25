@@ -21,7 +21,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.excf.epicsmqtt.gateway.model.PVValue;
+import org.excf.epicsmqtt.gateway.model.PV;
 import org.reactivestreams.FlowAdapters;
 
 import java.nio.charset.StandardCharsets;
@@ -71,7 +71,7 @@ public class MqttService {
     }
 
     void onStop(@Observes ShutdownEvent ev) {
-        if (client != null) {
+        if (client != null && client.getState() != MqttClientState.DISCONNECTED) {
             client.disconnect().blockingAwait();
         }
     }
@@ -98,8 +98,8 @@ public class MqttService {
         ).await().indefinitely();
     }
 
-    public Uni<Void> publish(String topic, PVValue pvValue) throws JsonProcessingException {
-        byte[] payload = mapper.writeValueAsBytes(pvValue);
+    public Uni<Void> publish(String topic, PV pv) throws JsonProcessingException {
+        byte[] payload = mapper.writeValueAsBytes(pv);
         return doPublish(topic, payload);
     }
 

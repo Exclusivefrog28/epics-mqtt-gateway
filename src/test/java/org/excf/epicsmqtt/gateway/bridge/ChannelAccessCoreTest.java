@@ -19,9 +19,11 @@ import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
+import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -73,9 +75,9 @@ public class ChannelAccessCoreTest {
         pvValue.value = new int[]{randomInt};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic, pvValue).await().indefinitely();
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue)).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
                         ((int[]) adapter.getHosted(channel.pvName).await().indefinitely().value)[0]));
 
@@ -98,11 +100,11 @@ public class ChannelAccessCoreTest {
 
         HashSet<String> receivedValues = new HashSet<>();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     byte[] lastMessage = spy.getLastMessage();
                     Assertions.assertNotNull(lastMessage);
-                    String monitorValue = ((String[]) mapper.readValue(lastMessage, PVValue.class).value)[0];
+                    String monitorValue = ((String[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0];
                     Assertions.assertNotNull(monitorValue);
                     receivedValues.add(monitorValue);
                     Assertions.assertTrue(receivedValues.size() > 2);
@@ -133,9 +135,9 @@ public class ChannelAccessCoreTest {
         pvValue.setDBRType(DBRType.DOUBLE);
         pvValue.value = new double[]{new Random().nextDouble(0, 100)};
         pvValue.timestamp = Instant.now();
-        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
+        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     DBR dbr = caClient.get(channel.pvName).await().indefinitely();
                     Assertions.assertInstanceOf(DBR_Double.class, dbr);
@@ -172,20 +174,25 @@ public class ChannelAccessCoreTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
+        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
 
         double[] testValue = new double[]{new Random().nextDouble(0, 100)};
 
         caClient.put(channel.pvName, testValue).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     byte[] lastMessage = spy.getLastMessage();
                     Assertions.assertNotNull(lastMessage);
-                    Assertions.assertEquals(testValue[0], ((double[]) mapper.readValue(lastMessage, PVValue.class).value)[0]);
+                    Assertions.assertEquals(testValue[0], ((double[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0]);
                 });
 
         bridge.removeExternal(channel.pvName);
+    }
+
+    @BeforeEach
+    public void reset() {
+        spy.reset();
     }
 
     @ApplicationScoped
@@ -205,6 +212,10 @@ public class ChannelAccessCoreTest {
 
         public byte[] getLastMessage() {
             return lastMessage.get();
+        }
+
+        public void reset() {
+            lastMessage.set(null);
         }
     }
 }

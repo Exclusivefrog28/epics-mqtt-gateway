@@ -5,4 +5,6 @@ import java.util.List;
 public class GatewayConfig {
     public List<HostedChannel> hosted;
     public List<ExternalChannel> external;
+
+    public boolean unrestricted = false;
 }

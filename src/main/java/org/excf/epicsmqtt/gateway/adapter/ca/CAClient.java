@@ -12,6 +12,7 @@ import gov.aps.jca.event.PutListener;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
+import org.excf.epicsmqtt.gateway.model.PV;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,11 +83,14 @@ public class CAClient {
                                 DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
                                 Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE,
 
-                                        ev -> adapter.put(channelName, adapter.convertDBRToPVValue(ev.getDBR())).subscribe().with(
-                                                unused -> {
-                                                },
-                                                failure -> Log.warnf("Failed to send monitored value on channel %s", channelName, failure)
-                                        )
+                                        ev -> adapter.put(
+                                                        new PV(channelName, adapter.convertDBRToPVValue(ev.getDBR()))
+                                                )
+                                                .subscribe().with(
+                                                        unused -> {
+                                                        },
+                                                        failure -> Log.warnf("Failed to send monitored value on channel %s", channelName, failure)
+                                                )
                                 );
                                 openMonitors.put(channelName, monitor);
 
@@ -117,15 +121,13 @@ public class CAClient {
                 .onItem().transformToUni(channel ->
                         Uni.createFrom().emitter(emitter -> {
                             try {
-                                PutListener listener = ev -> {
-                                    Infrastructure.getDefaultExecutor().execute(() -> {
-                                        if (ev.getStatus().isSuccessful()) {
-                                            emitter.complete(null);
-                                        } else {
-                                            emitter.fail(new IOException("CA Put failed: " + ev.getStatus()));
-                                        }
-                                    });
-                                };
+                                PutListener listener = ev -> Infrastructure.getDefaultExecutor().execute(() -> {
+                                    if (ev.getStatus().isSuccessful()) {
+                                        emitter.complete(null);
+                                    } else {
+                                        emitter.fail(new IOException("CA Put failed: " + ev.getStatus()));
+                                    }
+                                });
 
                                 switch (value) {
                                     case int[] ig -> channel.put(ig, listener);

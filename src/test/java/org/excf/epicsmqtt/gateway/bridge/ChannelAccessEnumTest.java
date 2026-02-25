@@ -2,28 +2,25 @@ package org.excf.epicsmqtt.gateway.bridge;
 
 import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import gov.aps.jca.configuration.DefaultConfiguration;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_String;
-import io.quarkus.runtime.StartupEvent;
 import io.quarkus.test.junit.QuarkusTest;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
+import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
@@ -62,18 +59,18 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic, pvValue).await().indefinitely();
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue)).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
                     Assertions.assertEquals("RGB1", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
         pvValue.value = new short[]{2};
-        mqttService.publish(channel.mqttTopic, pvValue).await().indefinitely();
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue)).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
                     Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
@@ -106,9 +103,9 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
         pvValue.metadata.labels = new String[]{"Bad", "Good"};
         pvValue.timestamp = Instant.now();
-        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
+        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     DBR dbr = caClient.get(channel.pvName, DBRType.STRING).await().indefinitely();
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
@@ -146,39 +143,22 @@ public class ChannelAccessEnumTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.putExternalAsync(channel.pvName, pvValue).await().indefinitely();
+        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
 
         caClient.put(channel.pvName, new String[]{"Good"}).await().indefinitely();
 
-        await().atMost(5, SECONDS).untilAsserted(
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     byte[] lastMessage = spy.getLastMessage();
                     Assertions.assertNotNull(lastMessage);
-                    Assertions.assertEquals(1, ((short[]) mapper.readValue(lastMessage, PVValue.class).value)[0]);
+                    Assertions.assertEquals(1, ((short[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0]);
                 });
 
         bridge.removeExternal(channel.pvName);
     }
 
-    @ApplicationScoped
-    public static class BrokerSpy {
-
-        @Inject
-        MqttService mqttService;
-
-        private final AtomicReference<byte[]> lastMessage = new AtomicReference<>();
-        ;
-
-        void subscribe(@Observes StartupEvent ev) {
-            mqttService.subscribe("pv/+")
-                    .map(Mqtt5Publish::getPayloadAsBytes)
-                    .onItem().invoke(lastMessage::set)
-                    .subscribe().with(unused -> {
-                    });
-        }
-
-        public byte[] getLastMessage() {
-            return lastMessage.get();
-        }
+    @BeforeEach
+    public void reset() {
+        spy.reset();
     }
 }

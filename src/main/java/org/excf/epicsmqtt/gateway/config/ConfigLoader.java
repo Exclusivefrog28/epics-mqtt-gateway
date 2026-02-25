@@ -34,14 +34,18 @@ public class ConfigLoader {
             }
             GatewayConfig config = mapper.readValue(is, GatewayConfig.class);
 
-            if (config.hosted != null) {
-                for (HostedChannel channel : config.hosted) {
-                    bridge.registerHosted(channel);
+            if (config.unrestricted){
+                bridge.registerAll(config.hosted);
+            }else{
+                if (config.hosted != null) {
+                    for (HostedChannel channel : config.hosted) {
+                        bridge.registerHosted(channel);
+                    }
                 }
-            }
-            if (config.external != null) {
-                for (ExternalChannel channel : config.external) {
-                    bridge.registerExternal(channel);
+                if (config.external != null) {
+                    for (ExternalChannel channel : config.external) {
+                        bridge.registerExternal(channel);
+                    }
                 }
             }
         } catch (Exception e) {

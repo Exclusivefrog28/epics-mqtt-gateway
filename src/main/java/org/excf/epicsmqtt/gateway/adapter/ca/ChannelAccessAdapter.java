@@ -10,6 +10,7 @@ import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
+import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.time.Instant;
@@ -34,30 +35,13 @@ public class ChannelAccessAdapter extends Adapter {
     }
 
     @Override
-    public void addHostedChannel(String channel, boolean monitor) {
-        super.addHostedChannel(channel, monitor);
-        if (monitor) {
-            try {
-                caClient.attachMonitor(channel).await().indefinitely();
-            } catch (Exception e) {
-                Log.error("Failed to attach CA monitor to channel %s".formatted(channel), e);
-            }
-        }
+    public void monitorHosted(String channel) {
+        caClient.attachMonitor(channel).await().indefinitely();
     }
 
     @Override
-    public void removeHostedChannel(String channel) {
-        super.removeHostedChannel(channel);
-        try {
-            caClient.detachMonitor(channel);
-        } catch (Exception e) {
-            Log.error("Failed to detach CA monitor from channel %s".formatted(channel), e);
-        }
-    }
-
-    @Override
-    public Uni<Void> putHosted(String channel, PVValue value) {
-        return caClient.put(channel, value.value);
+    public Uni<Void> putHosted(PV pv) {
+        return caClient.put(pv.pvName, pv.pvValue.value);
     }
 
     PVValue convertDBRToPVValue(DBR dbr) {
