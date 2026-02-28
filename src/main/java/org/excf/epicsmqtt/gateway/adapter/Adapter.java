@@ -35,7 +35,7 @@ public abstract class Adapter {
         return bridge.putExternal(pv);
     }
 
-    public Uni<Void> put(PV pv) {
-        return bridge.put(pv);
+    public Uni<Void> update(PV pv) {
+        return bridge.update(pv);
     }
 }

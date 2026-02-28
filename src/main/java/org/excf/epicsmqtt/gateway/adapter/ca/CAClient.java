@@ -1,9 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
-import gov.aps.jca.CAException;
-import gov.aps.jca.Channel;
-import gov.aps.jca.Context;
-import gov.aps.jca.Monitor;
+import gov.aps.jca.*;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.event.ConnectionEvent;
@@ -83,7 +80,7 @@ public class CAClient {
                                 DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
                                 Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE,
 
-                                        ev -> adapter.put(
+                                        ev -> adapter.update(
                                                         new PV(channelName, adapter.convertDBRToPVValue(ev.getDBR()))
                                                 )
                                                 .subscribe().with(

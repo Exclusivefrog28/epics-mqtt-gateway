@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway.bridge;
+package org.excf.epicsmqtt.gateway;
 
 import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,10 +6,13 @@ import gov.aps.jca.configuration.DefaultConfiguration;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_String;
+import io.quarkus.logging.Log;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
+import org.excf.epicsmqtt.gateway.bridge.Bridge;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
@@ -17,15 +20,17 @@ import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
 @QuarkusTest
+@QuarkusTestResource(EpicsIocResource.class)
 public class ChannelAccessEnumTest {
     @Inject
     Bridge bridge;
@@ -40,13 +45,13 @@ public class ChannelAccessEnumTest {
     ObjectMapper mapper;
 
     @Inject
-    ChannelAccessCoreTest.BrokerSpy spy;
+    TestClient testClient;
 
     /**
      * Tests CA client get and put to local ENUM type channel
      */
     @Test
-    public void testHostedChannelEnum() throws Exception {
+    public void testHostedChannelEnum() {
 
         HostedChannel channel = new HostedChannel();
         channel.alias = "test_alias";
@@ -59,7 +64,7 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue)).await().indefinitely();
+        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.pvName, pvValue)).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -68,7 +73,7 @@ public class ChannelAccessEnumTest {
                 });
 
         pvValue.value = new short[]{2};
-        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue)).await().indefinitely();
+        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.pvName, pvValue)).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -103,22 +108,25 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
         pvValue.metadata.labels = new String[]{"Bad", "Good"};
         pvValue.timestamp = Instant.now();
-        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
+
+        testClient.addPV(channel.mqttTopic, new PV(channel.pvName, pvValue));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
-                    DBR dbr = caClient.get(channel.pvName, DBRType.STRING).await().indefinitely();
+                    DBR dbr = caClient.get(channel.pvName).await().indefinitely();
+                    Log.info(dbr.getType());
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
                 });
 
         bridge.removeExternal(channel.pvName);
+        testClient.removePV(channel.mqttTopic);
     }
 
     /**
      * Tests putting an external ENUM value through the CA server
      */
     @Test
-    public void testExternalChannelPut() throws Exception {
+    public void testExternalChannelPutEnum() throws Exception {
         class TestContext extends CAJContext {
         }
 
@@ -143,22 +151,21 @@ public class ChannelAccessEnumTest {
         pvValue.timestamp = Instant.now();
 
         // Some value needs to exist in MQTT already to know its type
-        bridge.putExternal(new PV(channel.pvName, pvValue)).await().indefinitely();
+        testClient.addPV(channel.mqttTopic, new PV(channel.pvName, pvValue));
+        AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic + "/PUT");
 
-        caClient.put(channel.pvName, new String[]{"Good"}).await().indefinitely();
+        caClient.put(channel.pvName, new String[]{"Good"}).await().atMost(Duration.ofSeconds(5));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
-                    byte[] lastMessage = spy.getLastMessage();
+                    byte[] lastMessage = lastMessageRef.get();
                     Assertions.assertNotNull(lastMessage);
                     Assertions.assertEquals(1, ((short[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0]);
                 });
 
         bridge.removeExternal(channel.pvName);
-    }
 
-    @BeforeEach
-    public void reset() {
-        spy.reset();
+        testClient.removePV(channel.mqttTopic);
+        testClient.unsubscribe(channel.mqttTopic + "/PUT");
     }
 }

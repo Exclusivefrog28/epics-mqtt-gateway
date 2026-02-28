@@ -1,6 +1,5 @@
 package org.excf.epicsmqtt.gateway.bridge;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import io.quarkus.logging.Log;
@@ -29,9 +28,11 @@ public class Bridge {
     @Inject
     ObjectMapper mapper;
 
+    @Inject
+    PVCache pvCache;
+
     protected Map<String, Adapter> adapters = new HashMap<>();
     protected Map<String, String> topicMap = new ConcurrentHashMap<>();
-    protected Map<String, PVValue> externalChannelValues = new ConcurrentHashMap<>();
 
     @Inject
     Instance<Adapter> adapterInstances;
@@ -45,12 +46,21 @@ public class Bridge {
             if (a instanceof ChannelAccessAdapter) {
                 adapters.put(channel.pvName, a);
                 if (channel.monitor) a.monitorHosted(channel.pvName);
+                else mqttService.subscribe(channel.mqttTopic + "/GET")
+                        .onItem().transformToUniAndConcatenate(request ->
+                                a.getHosted(channel.pvName)
+                                        .onItem().transform(pvValue -> new PV(channel.pvName, pvValue))
+                                        .chain(this::update)
+                                        .onFailure().recoverWithNull()
+                        ).subscribe().with(unused -> {
+                        }, e -> Log.error("MQTT stream error", e));
             }
         }
-        mqttService.subscribe(channel.mqttTopic)
+
+        mqttService.subscribe(channel.mqttTopic + "/PUT")
                 .onItem().transformToUniAndConcatenate(message ->
                         parseMessage(message)
-                                .chain(this::handledHosted)
+                                .chain(this::handledHostedPut)
                                 .onFailure().recoverWithNull()
                 )
                 .subscribe().with(unused -> {
@@ -75,7 +85,7 @@ public class Bridge {
     }
 
     public void removeExternal(String pvName) {
-        mqttService.unsubscribe(pvName);
+        mqttService.unsubscribe(topicMap.get(pvName));
     }
 
     public void registerAll(Collection<HostedChannel> hostedChannels) {
@@ -89,10 +99,11 @@ public class Bridge {
                 }
             }
 
+        // noLocal subscription should prevent hosted channels from receiving their own updates
         mqttService.subscribe("pv/#")
                 .onItem().transformToUniAndConcatenate(message ->
                         parseMessage(message)
-                                .chain(this::handleMessage)
+                                .chain(this::handleExternal)
                                 .onFailure().recoverWithNull()
                 )
                 .subscribe().with(unused -> {
@@ -110,64 +121,48 @@ public class Bridge {
         }
     }
 
-    private Uni<Void> handleMessage(PV pv) {
-        if (adapters.containsKey(pv.pvName)) {
-            return handledHosted(pv);
-        } else {
-            return handleExternal(pv);
-        }
-    }
-
-    private Uni<Void> handledHosted(PV pv) {
+    private Uni<Void> handledHostedPut(PV pv) {
         if (!adapters.containsKey(pv.pvName)) {
             Log.warnf("No adapter registered for hosted channel %s", pv.pvName);
             return Uni.createFrom().failure(new RuntimeException("No adapter registered for hosted channel " + pv.pvName));
         }
 
         Adapter adapter = adapters.get(pv.pvName);
-        // TODO: handle non-monitoring hosted channels, without infinite calls,
-        //       MQTT has noLocal subscribe, but I need local for testing
         return adapter.putHosted(pv)
                 .ifNoItem().after(Duration.ofSeconds(3)).failWith(TimeoutException::new);
     }
 
     private Uni<Void> handleExternal(PV pv) {
         topicMap.putIfAbsent(pv.pvName, pv.topic);
-        externalChannelValues.put(pv.pvName, pv.pvValue);
+        pvCache.add(pv);
         return Uni.createFrom().nullItem();
     }
 
     /**
      * Only retrieves the in-memory value for the PV,
-     * TODO: should do an MQTT call if that doesn't exist
+     * Requests it over MQTT if that doesn't exist
      */
     public Uni<PVValue> getExternalCached(String channel) {
-        return Uni.createFrom().item(() -> externalChannelValues.get(channel));
+        return pvCache.getCached(topicMap.get(channel));
     }
 
     /**
-     * TODO: do an MQTT call to get the value,
-     *       if the value is monitored, the cache should have it already
+     * TODO: handle monitored values ( the cache should be up to date with those )
      */
     public Uni<PVValue> getExternal(String channel) {
-        return Uni.createFrom().item(() -> externalChannelValues.get(channel));
+        return pvCache.get(topicMap.get(channel));
     }
 
-    public Uni<Void> put(PV pv) {
-        try {
-            return mqttService.publish(topicMap.get(pv.pvName), pv);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Cannot serialize PV", e);
-        }
+    public Uni<Void> update(PV pv) {
+        return mqttService.publish(topicMap.get(pv.pvName), pv);
     }
 
     public Uni<Void> putExternal(PV pv) {
-        externalChannelValues.put(pv.pvName, pv.pvValue);
-        return put(pv);
+        return mqttService.publish(topicMap.get(pv.pvName) + "/PUT", pv);
     }
 
     public void clear() {
-        externalChannelValues.clear();
+        pvCache.clear();
         adapters.clear();
     }
 }

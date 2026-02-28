@@ -4,10 +4,11 @@ import gov.aps.jca.JCALibrary;
 import gov.aps.jca.cas.ServerContext;
 import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
+import io.quarkus.runtime.ShutdownEvent;
+import io.quarkus.runtime.StartupEvent;
 import io.smallrye.mutiny.Uni;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.model.PV;
@@ -93,8 +94,7 @@ public class ChannelAccessAdapter extends Adapter {
         return pvValue;
     }
 
-    @PostConstruct
-    public void startup() {
+    public void startup(@Observes StartupEvent ev) {
         try {
             System.setProperty("com.cosylab.epics.caj.CAJContext.addr_list", clientAddrList);
             System.setProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", clientAutoAddrList);
@@ -108,7 +108,7 @@ public class ChannelAccessAdapter extends Adapter {
                 try {
                     caServer.run(0);
                 } catch (Throwable th) {
-                    Log.error("ChannelAccess server didn't shut down gracefully", th);
+                    Log.error("Could not start ChannelAccess server", th);
                 }
             });
             caServerThread.start();
@@ -117,11 +117,11 @@ public class ChannelAccessAdapter extends Adapter {
         }
     }
 
-    @PreDestroy
-    public void cleanup() {
+    public void cleanup(@Observes ShutdownEvent ev) {
         try {
+            if (caServer != null)
+                caServer.shutdown();
             if (caServerThread != null) {
-                caServerThread.interrupt();
                 caServerThread.join();
             }
             if (caServer != null)

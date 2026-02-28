@@ -98,12 +98,20 @@ public class MqttService {
         ).await().indefinitely();
     }
 
-    public Uni<Void> publish(String topic, PV pv) throws JsonProcessingException {
-        byte[] payload = mapper.writeValueAsBytes(pv);
-        return doPublish(topic, payload);
+    public Uni<Void> publish(String topic, PV pv) {
+        try {
+            byte[] payload = mapper.writeValueAsBytes(pv);
+            return doPublish(topic, payload, true);
+        } catch (JsonProcessingException e) {
+            return Uni.createFrom().failure(e);
+        }
     }
 
-    private Uni<Void> doPublish(String topic, byte[] payload) {
+    public Uni<Void> publish(String topic, String payload) {
+        return doPublish(topic, payload.getBytes(StandardCharsets.UTF_8), false);
+    }
+
+    private Uni<Void> doPublish(String topic, byte[] payload, boolean retain) {
         return Uni.createFrom().deferred(() -> {
                     if (client == null || !client.getState().isConnected())
                         return Uni.createFrom().failure(new RuntimeException("Client Disconnected"));
@@ -114,7 +122,7 @@ public class MqttService {
                                             Mqtt5Publish.builder()
                                                     .topic(topic)
                                                     .qos(MqttQos.AT_LEAST_ONCE)
-                                                    .retain(true)
+                                                    .retain(retain)
                                                     .payload(payload)
                                                     .build()
                                     ))
