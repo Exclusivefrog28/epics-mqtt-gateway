@@ -3,7 +3,9 @@ package org.excf.epicsmqtt.gateway.bridge;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -33,6 +35,7 @@ public class Bridge {
 
     protected Map<String, Adapter> adapters = new HashMap<>();
     protected Map<String, String> topicMap = new ConcurrentHashMap<>();
+    protected Map<String, Cancellable> monitors = new HashMap<>();
 
     @Inject
     Instance<Adapter> adapterInstances;
@@ -45,7 +48,12 @@ public class Bridge {
         for (Adapter a : adapterInstances) {
             if (a instanceof ChannelAccessAdapter) {
                 adapters.put(channel.pvName, a);
-                if (channel.monitor) a.monitorHosted(channel.pvName);
+                if (channel.monitor)
+                    monitors.put(channel.mqttTopic, a.monitorHosted(channel.pvName)
+                            .onItem().transformToUniAndConcatenate(this::update)
+                            .onFailure().recoverWithItem(unused -> null)
+                            .subscribe().with(unused -> {
+                            }, e -> Log.error("Monitor stream error", e)));
                 else mqttService.subscribe(channel.mqttTopic + "/GET")
                         .onItem().transformToUniAndConcatenate(request ->
                                 a.getHosted(channel.pvName)
@@ -67,9 +75,13 @@ public class Bridge {
                 }, e -> Log.error("MQTT stream error", e));
     }
 
-    public void removeHosted(String pvName) {
-        adapters.remove(pvName);
-        mqttService.unsubscribe(pvName);
+    public void removeHosted(HostedChannel channel) {
+        if (monitors.containsKey(channel.mqttTopic)) {
+            monitors.get(channel.mqttTopic).cancel();
+            monitors.remove(channel.mqttTopic);
+        }
+        adapters.remove(channel.pvName);
+        mqttService.unsubscribe(channel.mqttTopic);
     }
 
     public void registerExternal(ExternalChannel channel) {
@@ -94,7 +106,12 @@ public class Bridge {
                 for (Adapter a : adapterInstances) {
                     if (a instanceof ChannelAccessAdapter) {
                         adapters.put(hostedChannel.pvName, a);
-                        if (hostedChannel.monitor) a.monitorHosted(hostedChannel.pvName);
+                        if (hostedChannel.monitor)
+                            a.monitorHosted(hostedChannel.pvName)
+                                    .onItem().transformToUniAndConcatenate(this::update)
+                                    .onFailure().recoverWithItem(unused -> null)
+                                    .subscribe().with(unused -> {
+                                    }, e -> Log.error("Monitor stream error", e));
                     }
                 }
             }
@@ -116,7 +133,7 @@ public class Bridge {
             pv.topic = message.getTopic().toString();
             return Uni.createFrom().item(pv);
         } catch (Exception e) {
-            Log.warnf("Error deserializing MQTT payload from %s", message.getTopic(), e);
+            Log.warnf(e, "Error deserializing MQTT payload from %s", message.getTopic());
             return Uni.createFrom().failure(e);
         }
     }
@@ -147,7 +164,8 @@ public class Bridge {
     }
 
     /**
-     * TODO: handle monitored values ( the cache should be up to date with those )
+     * Requests the value of the PV over MQTT,
+     * unless it is monitored (in which case the cache should be up to date)
      */
     public Uni<PVValue> getExternal(String channel) {
         return pvCache.get(topicMap.get(channel));
@@ -159,6 +177,11 @@ public class Bridge {
 
     public Uni<Void> putExternal(PV pv) {
         return mqttService.publish(topicMap.get(pv.pvName) + "/PUT", pv);
+    }
+
+    public Multi<PV> monitorExternal(String channel) {
+        return mqttService.subscribe(topicMap.get(channel))
+                .onItem().transformToUniAndConcatenate(this::parseMessage);
     }
 
     public void clear() {

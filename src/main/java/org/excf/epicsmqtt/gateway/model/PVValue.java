@@ -27,38 +27,46 @@ public class PVValue {
     }
 
     @JsonIgnore
-    public void setDBRType(DBRType type){
+    public void setDBRType(DBRType type) {
         this.type = type.getValue();
     }
 
     @JsonIgnore
-    public DBRType getDBRType(){
+    public DBRType getDBRType() {
         return DBRType.forValue(type);
     }
 
     @JsonIgnore
-    public Status getStatus(){
+    public Status getStatus() {
         return Status.forValue(status);
     }
 
     @JsonIgnore
-    public void setStatus(Status status){
+    public void setStatus(Status status) {
         this.status = status.getValue();
     }
 
     @JsonIgnore
-    public Severity getSeverity(){
+    public Severity getSeverity() {
         return Severity.forValue(severity);
     }
 
     @JsonIgnore
-    public void setSeverity(Severity severity){
+    public void setSeverity(Severity severity) {
         this.severity = severity.getValue();
     }
 
     @JsonIgnore
-    public int getCount(){
-        return 0;
+    public int getCount() {
+        return switch (value) {
+            case int[] ig -> ig.length;
+            case double[] du -> du.length;
+            case byte[] by -> by.length;
+            case short[] sh -> sh.length;
+            case float[] fl -> fl.length;
+            case String[] st -> st.length;
+            default -> 0;
+        };
     }
 
     public PVValue() {

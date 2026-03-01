@@ -1,10 +1,12 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
 import gov.aps.jca.CAStatus;
+import gov.aps.jca.Monitor;
 import gov.aps.jca.cas.*;
 import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
+import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.enterprise.context.Dependent;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
@@ -40,7 +42,7 @@ public class CAServer implements Server {
             throws IllegalArgumentException, IllegalStateException {
         adapter.getExternalCached(s)
                 .subscribe().with(
-                        pvValue -> processVariableAttachCallback.processVariableAttachCompleted(new ReactivePV(s, pvValue)),
+                        pvValue -> processVariableAttachCallback.processVariableAttachCompleted(new ReactivePV(s, pvValue, processVariableEventCallback)),
                         failure -> processVariableAttachCallback.processVariableAttachCompleted(null)
                 );
 
@@ -49,9 +51,10 @@ public class CAServer implements Server {
 
     private class ReactivePV extends ProcessVariable {
         private final PVValue initialMeta;
+        private Cancellable subscription;
 
-        public ReactivePV(String name, PVValue initialMeta) {
-            super(name, null);
+        public ReactivePV(String name, PVValue initialMeta, ProcessVariableEventCallback processVariableEventCallback) {
+            super(name, processVariableEventCallback);
             this.initialMeta = initialMeta;
         }
 
@@ -63,6 +66,36 @@ public class CAServer implements Server {
         @Override
         public String[] getEnumLabels() {
             return initialMeta.metadata.labels;
+        }
+
+        @Override
+        public int getDimensionSize(int dimension) {
+            return initialMeta.getCount();
+        }
+
+        @Override
+        public void interestRegister() {
+            super.interestRegister();
+            if (subscription == null)
+                subscription = adapter.addExternalMonitor(name)
+                        .onItem().transform(pv ->
+                                fillDBR(DBRType.forValue(pv.pvValue.type).newInstance(pv.pvValue.getCount()), pv.pvValue))
+                        .onItem().invoke(dbr -> getEventCallback().postEvent(Monitor.VALUE, dbr))
+                        .onFailure().recoverWithItem(th -> null)
+                        .subscribe().with(
+                                unused -> {
+                                },
+                                failure -> Log.errorf(failure, "Error monitoring %s", name)
+                        );
+        }
+
+        @Override
+        public void interestDelete() {
+            super.interestDelete();
+            if (subscription != null) {
+                subscription.cancel();
+                subscription = null;
+            }
         }
 
         @Override
@@ -94,9 +127,7 @@ public class CAServer implements Server {
 
                 adapter.putExternal(new PV(name, newValue))
                         .subscribe().with(
-                                success -> {
-                                    writeCallback.processVariableWriteCompleted(CAStatus.NORMAL);
-                                },
+                                success -> writeCallback.processVariableWriteCompleted(CAStatus.NORMAL),
                                 failure -> {
                                     Log.errorf(failure, "Async write failed for %s", name);
                                     writeCallback.processVariableWriteCompleted(CAStatus.TIMEOUT);
@@ -111,7 +142,7 @@ public class CAServer implements Server {
         }
     }
 
-    private void fillDBR(DBR dbr, PVValue pvValue) {
+    private DBR fillDBR(DBR dbr, PVValue pvValue) {
         PrimitiveConverter.toPrimitiveArray(pvValue.value, dbr.getValue());
 
         // extract metadata
@@ -151,6 +182,8 @@ public class CAServer implements Server {
         if (dbr instanceof LABELS l) {
             l.setLabels(pvValue.metadata.labels);
         }
+
+        return dbr;
     }
 
 }

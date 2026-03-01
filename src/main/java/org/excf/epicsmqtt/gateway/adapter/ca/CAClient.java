@@ -1,15 +1,18 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
-import gov.aps.jca.*;
+import gov.aps.jca.CAException;
+import gov.aps.jca.Channel;
+import gov.aps.jca.Context;
+import gov.aps.jca.Monitor;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.event.ConnectionEvent;
 import gov.aps.jca.event.ConnectionListener;
 import gov.aps.jca.event.PutListener;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
-import org.excf.epicsmqtt.gateway.model.PV;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,7 +21,6 @@ public class CAClient {
     Context context;
 
     ConcurrentHashMap<String, Uni<Channel>> openChannels;
-    ConcurrentHashMap<String, Monitor> openMonitors;
 
     private final ChannelAccessAdapter adapter;
 
@@ -26,7 +28,6 @@ public class CAClient {
         this.context = context;
         this.adapter = adapter;
         openChannels = new ConcurrentHashMap<>();
-        openMonitors = new ConcurrentHashMap<>();
     }
 
     public Uni<DBR> get(String channelName) {
@@ -67,50 +68,34 @@ public class CAClient {
                 );
     }
 
-    public Uni<Void> attachMonitor(String channelName) {
+    public Multi<DBR> attachMonitor(String channelName) {
         return accessOrOpenChannel(channelName)
-                .onItem().transformToUni(channel ->
-                        Uni.createFrom().emitter(emitter -> {
-                            if (openMonitors.containsKey(channelName)) {
-                                emitter.complete(null);
-                                return;
-                            }
-
+                .onItem().transformToMulti(channel ->
+                        Multi.createFrom().emitter(emitter -> {
                             try {
                                 DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
                                 Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE,
-
-                                        ev -> adapter.update(
-                                                        new PV(channelName, adapter.convertDBRToPVValue(ev.getDBR()))
-                                                )
-                                                .subscribe().with(
-                                                        unused -> {
-                                                        },
-                                                        failure -> Log.warnf("Failed to send monitored value on channel %s", channelName, failure)
-                                                )
+                                        ev -> {
+                                            if (!emitter.isCancelled()) {
+                                                emitter.emit(ev.getDBR());
+                                            }
+                                        }
                                 );
-                                openMonitors.put(channelName, monitor);
-
                                 context.flushIO();
-                                emitter.complete(null);
+
+                                emitter.onTermination(() -> {
+                                    try {
+                                        monitor.clear();
+                                        context.flushIO();
+                                    } catch (Exception e) {
+                                        Log.errorf(e, "Failed to clear monitor for %s", channelName);
+                                    }
+                                });
                             } catch (Exception e) {
                                 emitter.fail(e);
                             }
                         })
                 );
-    }
-
-    public void detachMonitor(String channelName) {
-        Monitor monitor = openMonitors.remove(channelName);
-        if (monitor != null) {
-            try {
-                monitor.clear();
-                context.pendIO(5000);
-                context.flushIO();
-            } catch (Exception e) {
-                Log.errorf(e, "Failed to clear monitor for %s", channelName);
-            }
-        }
     }
 
     public Uni<Void> put(String channelName, Object value) {
@@ -182,11 +167,6 @@ public class CAClient {
     }
 
     public void shutDown() throws CAException {
-        for (String channel : openMonitors.keySet()) {
-            detachMonitor(channel);
-        }
-
-        openMonitors.clear();
         openChannels.clear();
 
         context.destroy();

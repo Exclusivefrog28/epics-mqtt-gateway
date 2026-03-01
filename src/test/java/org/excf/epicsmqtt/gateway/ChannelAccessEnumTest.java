@@ -81,7 +81,7 @@ public class ChannelAccessEnumTest {
                     Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
-        bridge.removeHosted(channel.pvName);
+        bridge.removeHosted(channel);
     }
 
 
@@ -114,7 +114,6 @@ public class ChannelAccessEnumTest {
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
                     DBR dbr = caClient.get(channel.pvName).await().indefinitely();
-                    Log.info(dbr.getType());
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
                 });
 

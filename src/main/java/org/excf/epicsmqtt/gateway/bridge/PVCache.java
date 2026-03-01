@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Singleton
 public class PVCache {
     private final Map<String, CompletableFuture<PVValue>> cache = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> monitored = new ConcurrentHashMap<>();
 
     @Inject
     MqttService mqttService;
@@ -41,6 +42,9 @@ public class PVCache {
             if (currentFuture != null && !currentFuture.isDone())
                 return currentFuture; // already waiting for a value, use the same future
 
+            if (monitored.getOrDefault(t, false))
+                return currentFuture;
+
             CompletableFuture<PVValue> pending = new CompletableFuture<>();
 
             sendGetRequest(t).await().atMost(Duration.ofSeconds(10));
@@ -54,6 +58,7 @@ public class PVCache {
     }
 
     public void add(PV pv) {
+        monitored.put(pv.topic, pv.monitored);
         cache.compute(pv.topic, (k, currentFuture) -> {
             if (currentFuture != null && !currentFuture.isDone()) {
                 currentFuture.complete(pv.pvValue);
@@ -65,6 +70,7 @@ public class PVCache {
 
     public void clear() {
         cache.clear();
+        monitored.clear();
     }
 
     private Uni<Void> sendGetRequest(String topic) {

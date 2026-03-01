@@ -8,6 +8,7 @@ import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_Double;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.helpers.test.AssertSubscriber;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
@@ -77,7 +78,7 @@ public class ChannelAccessCoreTest {
                 () -> Assertions.assertEquals(randomInt,
                         ((int[]) adapter.getHosted(channel.pvName).await().indefinitely().value)[0]));
 
-        bridge.removeHosted(channel.pvName);
+        bridge.removeHosted(channel);
     }
 
     /**
@@ -107,7 +108,7 @@ public class ChannelAccessCoreTest {
                     Assertions.assertTrue(receivedValues.size() > 2);
                 });
 
-        bridge.removeHosted(channel.pvName);
+        bridge.removeHosted(channel);
     }
 
     /**
@@ -172,7 +173,6 @@ public class ChannelAccessCoreTest {
         pvValue.value = new double[]{0};
         pvValue.timestamp = Instant.now();
 
-        // Some value needs to exist in MQTT already to know its type
         testClient.addPV(channel.mqttTopic, new PV(channel.pvName, pvValue));
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic + "/PUT");
 
@@ -191,5 +191,57 @@ public class ChannelAccessCoreTest {
 
         testClient.removePV(channel.mqttTopic);
         testClient.unsubscribe(channel.mqttTopic + "/PUT");
+    }
+
+    @Test
+    public void testExternalChannelMonitor() throws Exception {
+        class TestContext extends CAJContext {
+        }
+
+        TestContext context = new TestContext();
+        context.configure(new DefaultConfiguration("CONTEXT"));
+
+        CAClient caClient = new CAClient(context, adapter);
+
+        ExternalChannel channel = new ExternalChannel();
+        channel.alias = "test_alias";
+        channel.mqttTopic = "pv/external_monitored_double";
+        channel.pvName = "remote:monitored:pv";
+        channel.mode = Mode.READ_ONLY;
+
+        bridge.registerExternal(channel);
+
+        PVValue pvValue = new PVValue();
+        pvValue.setDBRType(DBRType.DOUBLE);
+        pvValue.value = new double[]{0};
+        pvValue.timestamp = Instant.now();
+
+
+        double[] testValue = new double[]{new Random().nextDouble(0, 100)};
+        pvValue.value = testValue;
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
+
+        AssertSubscriber<Double> subscriber =
+                caClient.attachMonitor(channel.pvName)
+                        .onItem().transform(dbr -> ((double[]) dbr.getValue())[0])
+                        .skip().repetitions()
+                        .subscribe().withSubscriber(AssertSubscriber.create(3));
+
+        double[] testValue1 = new double[]{new Random().nextDouble(0, 100)};
+        pvValue.value = testValue1;
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
+
+        double[] testValue2 = new double[]{new Random().nextDouble(0, 100)};
+        pvValue.value = testValue2;
+        mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
+
+        subscriber
+                .awaitItems(3)
+                .assertItems(testValue[0], testValue1[0], testValue2[0])
+                .assertNotTerminated();
+
+        subscriber.cancel();
+
+        bridge.removeExternal(channel.pvName);
     }
 }

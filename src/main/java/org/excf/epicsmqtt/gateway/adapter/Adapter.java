@@ -1,5 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter;
 
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
@@ -14,7 +15,7 @@ public abstract class Adapter {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public void monitorHosted(String channel){
+    public Multi<PV> monitorHosted(String channel){
         throw new UnsupportedOperationException("Not implemented");
     }
 
@@ -33,9 +34,5 @@ public abstract class Adapter {
 
     public Uni<Void> putExternal(PV pv) {
         return bridge.putExternal(pv);
-    }
-
-    public Uni<Void> update(PV pv) {
-        return bridge.update(pv);
     }
 }

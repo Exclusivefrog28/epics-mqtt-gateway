@@ -6,6 +6,7 @@ import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -36,13 +37,19 @@ public class ChannelAccessAdapter extends Adapter {
     }
 
     @Override
-    public void monitorHosted(String channel) {
-        caClient.attachMonitor(channel).await().indefinitely();
+    public Multi<PV> monitorHosted(String channel) {
+        return caClient.attachMonitor(channel)
+                .onItem().transform(this::convertDBRToPVValue)
+                .onItem().transform(pvValue -> new PV(channel, pvValue, true));
     }
 
     @Override
     public Uni<Void> putHosted(PV pv) {
         return caClient.put(pv.pvName, pv.pvValue.value);
+    }
+
+    public Multi<PV> addExternalMonitor(String channel) {
+        return bridge.monitorExternal(channel);
     }
 
     PVValue convertDBRToPVValue(DBR dbr) {
