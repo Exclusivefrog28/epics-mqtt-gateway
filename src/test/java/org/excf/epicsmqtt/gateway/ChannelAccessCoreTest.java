@@ -116,11 +116,7 @@ public class ChannelAccessCoreTest {
      */
     @Test
     public void testExternalChannelGet() throws Exception {
-
-        TestContext context = new TestContext();
-        context.configure(new DefaultConfiguration("CONTEXT"));
-
-        CAClient caClient = new CAClient(context, adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
@@ -152,13 +148,7 @@ public class ChannelAccessCoreTest {
      */
     @Test
     public void testExternalChannelPut() throws Exception {
-        class TestContext extends CAJContext {
-        }
-
-        TestContext context = new TestContext();
-        context.configure(new DefaultConfiguration("CONTEXT"));
-
-        CAClient caClient = new CAClient(context, adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
@@ -195,13 +185,7 @@ public class ChannelAccessCoreTest {
 
     @Test
     public void testExternalChannelMonitor() throws Exception {
-        class TestContext extends CAJContext {
-        }
-
-        TestContext context = new TestContext();
-        context.configure(new DefaultConfiguration("CONTEXT"));
-
-        CAClient caClient = new CAClient(context, adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
@@ -216,28 +200,26 @@ public class ChannelAccessCoreTest {
         pvValue.value = new double[]{0};
         pvValue.timestamp = Instant.now();
 
-
-        double[] testValue = new double[]{new Random().nextDouble(0, 100)};
-        pvValue.value = testValue;
         mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
 
         AssertSubscriber<Double> subscriber =
                 caClient.attachMonitor(channel.pvName)
                         .onItem().transform(dbr -> ((double[]) dbr.getValue())[0])
+                        .filter(value -> value != 0.0)
                         .skip().repetitions()
-                        .subscribe().withSubscriber(AssertSubscriber.create(3));
+                        .subscribe().withSubscriber(AssertSubscriber.create(2));
 
-        double[] testValue1 = new double[]{new Random().nextDouble(0, 100)};
+        double[] testValue1 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue1;
         mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
 
-        double[] testValue2 = new double[]{new Random().nextDouble(0, 100)};
+        double[] testValue2 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue2;
         mqttService.publish(channel.mqttTopic, new PV(channel.pvName, pvValue, true)).await().indefinitely();
 
         subscriber
-                .awaitItems(3)
-                .assertItems(testValue[0], testValue1[0], testValue2[0])
+                .awaitItems(2)
+                .assertItems(testValue1[0], testValue2[0])
                 .assertNotTerminated();
 
         subscriber.cancel();

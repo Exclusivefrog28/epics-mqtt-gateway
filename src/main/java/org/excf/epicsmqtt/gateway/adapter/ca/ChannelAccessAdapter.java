@@ -27,6 +27,11 @@ public class ChannelAccessAdapter extends Adapter {
     @ConfigProperty(name = "ca.client.addr.list")
     String clientAddrList;
 
+    @ConfigProperty(name = "ca.server.server.port", defaultValue = "5064")
+    String serverPort;
+    @ConfigProperty(name = "ca.server.repeater.port", defaultValue = "5065")
+    String serverRepeaterPort;
+
     private CAClient caClient;
 
     private Thread caServerThread;
@@ -105,6 +110,9 @@ public class ChannelAccessAdapter extends Adapter {
         try {
             System.setProperty("com.cosylab.epics.caj.CAJContext.addr_list", clientAddrList);
             System.setProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", clientAutoAddrList);
+
+            System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.server_port", serverPort);
+            System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.repeater_port", serverRepeaterPort);
 
             caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
                     new CAServer(this));

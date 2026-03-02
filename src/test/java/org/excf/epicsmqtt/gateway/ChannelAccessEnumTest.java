@@ -90,11 +90,7 @@ public class ChannelAccessEnumTest {
      */
     @Test
     public void testExternalChannelGetEnum() throws Exception {
-
-        ChannelAccessCoreTest.TestContext context = new ChannelAccessCoreTest.TestContext();
-        context.configure(new DefaultConfiguration("CONTEXT"));
-
-        CAClient caClient = new CAClient(context, adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
@@ -126,13 +122,7 @@ public class ChannelAccessEnumTest {
      */
     @Test
     public void testExternalChannelPutEnum() throws Exception {
-        class TestContext extends CAJContext {
-        }
-
-        TestContext context = new TestContext();
-        context.configure(new DefaultConfiguration("CONTEXT"));
-
-        CAClient caClient = new CAClient(context, adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
