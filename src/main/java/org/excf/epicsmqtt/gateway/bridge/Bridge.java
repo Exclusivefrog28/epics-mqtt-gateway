@@ -1,7 +1,6 @@
 package org.excf.epicsmqtt.gateway.bridge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
@@ -16,6 +15,7 @@ import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
+import org.excf.epicsmqtt.gateway.mqtt.SignedMessage;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -49,12 +49,18 @@ public class Bridge {
             if (a instanceof ChannelAccessAdapter) {
                 adapters.put(channel.pvName, a);
                 if (channel.monitor)
-                    monitors.put(channel.mqttTopic, a.monitorHosted(channel.pvName)
-                            .onItem().transformToUniAndConcatenate(this::update)
-                            .onFailure().recoverWithItem(unused -> null)
-                            .subscribe().with(unused -> {
-                            }, e -> Log.error("Monitor stream error", e)));
-                else mqttService.subscribe(channel.mqttTopic + "/GET")
+                    addMonitor(channel, a);
+                else
+                    mqttService.subscribe(channel.mqttTopic + "/MONITOR")
+                            .onItem().transformToUniAndConcatenate(request ->
+                                    parseBooleanMessage(request)
+                                            .onItem().invoke(shouldMonitor -> {
+                                                if (shouldMonitor) addMonitor(channel, a);
+                                            })
+                            ).subscribe().with(unused -> {
+                            }, e -> Log.error("MQTT stream error", e));
+
+                mqttService.subscribe(channel.mqttTopic + "/GET")
                         .onItem().transformToUniAndConcatenate(request ->
                                 a.getHosted(channel.pvName)
                                         .onItem().transform(pvValue -> new PV(channel.pvName, pvValue))
@@ -127,15 +133,31 @@ public class Bridge {
                 }, e -> Log.error("MQTT stream error", e));
     }
 
-    private Uni<PV> parseMessage(Mqtt5Publish message) {
+    private Uni<Boolean> parseBooleanMessage(SignedMessage message) {
+        try {
+            return Uni.createFrom().item(mapper.readValue(message.getPayloadAsBytes(), Boolean.class));
+        } catch (Exception e) {
+            return Uni.createFrom().failure(e);
+        }
+    }
+
+    private Uni<PV> parseMessage(SignedMessage message) {
         try {
             PV pv = mapper.readValue(message.getPayloadAsBytes(), PV.class);
-            pv.topic = message.getTopic().toString();
+            pv.topic = message.getTopic();
             return Uni.createFrom().item(pv);
         } catch (Exception e) {
             Log.warnf(e, "Error deserializing MQTT payload from %s", message.getTopic());
             return Uni.createFrom().failure(e);
         }
+    }
+
+    private void addMonitor(HostedChannel channel, Adapter adapter) {
+        monitors.put(channel.mqttTopic, adapter.monitorHosted(channel.pvName)
+                .onItem().transformToUniAndConcatenate(this::update)
+                .onFailure().recoverWithItem(unused -> null)
+                .subscribe().with(unused -> {
+                }, e -> Log.error("Monitor stream error", e)));
     }
 
     private Uni<Void> handledHostedPut(PV pv) {
@@ -146,7 +168,10 @@ public class Bridge {
 
         Adapter adapter = adapters.get(pv.pvName);
         return adapter.putHosted(pv)
-                .ifNoItem().after(Duration.ofSeconds(3)).failWith(TimeoutException::new);
+                .chain(unused -> adapter.getHosted(pv.pvName))
+                .onItem().transform(pvValue -> new PV(pv.pvName, pvValue))
+                .chain(this::update)
+                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new);
     }
 
     private Uni<Void> handleExternal(PV pv) {
@@ -181,6 +206,7 @@ public class Bridge {
 
     public Multi<PV> monitorExternal(String channel) {
         return mqttService.subscribe(topicMap.get(channel))
+                .onSubscription().call(() -> mqttService.publish(topicMap.get(channel) + "/MONITOR", "true"))
                 .onItem().transformToUniAndConcatenate(this::parseMessage);
     }
 

@@ -2,7 +2,6 @@ package org.excf.epicsmqtt.gateway;
 
 import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gov.aps.jca.configuration.DefaultConfiguration;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_Double;
@@ -91,12 +90,14 @@ public class ChannelAccessCoreTest {
         channel.mqttTopic = "pv/uptime";
         channel.pvName = "BL01T-EA-TST-02:UPTIME";
         channel.mode = Mode.READ_ONLY;
-        channel.monitor = true;
+        channel.monitor = false;
 
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic);
         HashSet<String> receivedValues = new HashSet<>();
 
         bridge.registerHosted(channel);
+
+        mqttService.publish(channel.mqttTopic + "/MONITOR", "true").await().atMost(Duration.ofSeconds(5));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {

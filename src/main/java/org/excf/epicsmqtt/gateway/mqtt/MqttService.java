@@ -77,17 +77,19 @@ public class MqttService {
     }
 
 
-    public Multi<Mqtt5Publish> subscribe(String topicFilter) {
+    public Multi<SignedMessage> subscribe(String topicFilter) {
         Mqtt5Subscribe subscribeMessage = Mqtt5Subscribe.builder()
                 .topicFilter(topicFilter)
                 .qos(MqttQos.AT_LEAST_ONCE)
                 .build();
 
         return Multi.createFrom().publisher(
-                FlowAdapters.toFlowPublisher(
-                        client.subscribePublishes(subscribeMessage)
+                        FlowAdapters.toFlowPublisher(
+                                client.subscribePublishes(subscribeMessage)
+                        )
                 )
-        );
+                .onItem().transform(SignedMessage::new)
+                .skip().repetitions();
     }
 
     public void unsubscribe(String topicFilter) {
@@ -123,7 +125,7 @@ public class MqttService {
                                                     .topic(topic)
                                                     .qos(MqttQos.AT_LEAST_ONCE)
                                                     .retain(retain)
-                                                    .payload(payload)
+                                                    .payload(SignedMessage.signMessage(payload))
                                                     .build()
                                     ))
                             )
