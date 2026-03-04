@@ -1,12 +1,9 @@
 package org.excf.epicsmqtt.gateway;
 
-import com.cosylab.epics.caj.CAJContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gov.aps.jca.configuration.DefaultConfiguration;
 import gov.aps.jca.dbr.DBR;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.DBR_String;
-import io.quarkus.logging.Log;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -20,10 +17,12 @@ import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -31,6 +30,8 @@ import static org.awaitility.Awaitility.await;
 
 @QuarkusTest
 @QuarkusTestResource(EpicsIocResource.class)
+@Tag("channel-access")
+@Tag("ca-enum")
 public class ChannelAccessEnumTest {
     @Inject
     Bridge bridge;
@@ -56,7 +57,8 @@ public class ChannelAccessEnumTest {
         HostedChannel channel = new HostedChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/colormode";
-        channel.pvName = "BL01T-DI-CAM-01:DET:ColorMode";
+        channel.localNames = Map.of("ca", "BL01T-DI-CAM-01:DET:ColorMode");
+        channel.protocol = "ca";
         channel.mode = Mode.READ_ONLY;
 
         PVValue pvValue = new PVValue();
@@ -64,20 +66,20 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.pvName, pvValue)).await().indefinitely();
+        mqttService.publish(channel.mqttTopic + "/PUT", new PV(pvValue)).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
-                    PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
+                    PVValue response = adapter.getHosted(channel.getSourceName()).await().indefinitely();
                     Assertions.assertEquals("RGB1", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
         pvValue.value = new short[]{2};
-        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.pvName, pvValue)).await().indefinitely();
+        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.localNames, pvValue)).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
-                    PVValue response = adapter.getHosted(channel.pvName).await().indefinitely();
+                    PVValue response = adapter.getHosted(channel.getSourceName()).await().indefinitely();
                     Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
@@ -90,12 +92,12 @@ public class ChannelAccessEnumTest {
      */
     @Test
     public void testExternalChannelGetEnum() throws Exception {
-        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get());
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_enum";
-        channel.pvName = "remote:pv:enum";
+        channel.localNames = Map.of("ca", "remote:pv:enum");
         channel.mode = Mode.READ_ONLY;
 
         bridge.registerExternal(channel);
@@ -105,15 +107,15 @@ public class ChannelAccessEnumTest {
         pvValue.metadata.labels = new String[]{"Bad", "Good"};
         pvValue.timestamp = Instant.now();
 
-        testClient.addPV(channel.mqttTopic, new PV(channel.pvName, pvValue));
+        testClient.addPV(channel.mqttTopic, new PV(channel.localNames, pvValue));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
-                    DBR dbr = caClient.get(channel.pvName).await().indefinitely();
+                    DBR dbr = caClient.get("remote:pv:enum").await().indefinitely();
                     Assertions.assertEquals(pvValue.metadata.labels[1], ((DBR_String) dbr.convert(DBRType.STRING)).getStringValue()[0]);
                 });
 
-        bridge.removeExternal(channel.pvName);
+        bridge.removeExternal(channel.mqttTopic);
         testClient.removePV(channel.mqttTopic);
     }
 
@@ -122,12 +124,12 @@ public class ChannelAccessEnumTest {
      */
     @Test
     public void testExternalChannelPutEnum() throws Exception {
-        CAClient caClient = new CAClient(ChannelAccessTestContext.get(), adapter);
+        CAClient caClient = new CAClient(ChannelAccessTestContext.get());
 
         ExternalChannel channel = new ExternalChannel();
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_enum";
-        channel.pvName = "remote:pv:enum";
+        channel.localNames = Map.of("ca", "remote:pv:enum");
         channel.mode = Mode.READ_ONLY;
 
         bridge.registerExternal(channel);
@@ -139,11 +141,10 @@ public class ChannelAccessEnumTest {
         pvValue.metadata.labels = new String[]{"Bad", "Good"};
         pvValue.timestamp = Instant.now();
 
-        // Some value needs to exist in MQTT already to know its type
-        testClient.addPV(channel.mqttTopic, new PV(channel.pvName, pvValue));
+        testClient.addPV(channel.mqttTopic, new PV(channel.localNames, pvValue));
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic + "/PUT");
 
-        caClient.put(channel.pvName, new String[]{"Good"}).await().atMost(Duration.ofSeconds(5));
+        caClient.put("remote:pv:enum", new String[]{"Good"}).await().atMost(Duration.ofSeconds(5));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -152,8 +153,7 @@ public class ChannelAccessEnumTest {
                     Assertions.assertEquals(1, ((short[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0]);
                 });
 
-        bridge.removeExternal(channel.pvName);
-
+        bridge.removeExternal(channel.mqttTopic);
         testClient.removePV(channel.mqttTopic);
         testClient.unsubscribe(channel.mqttTopic + "/PUT");
     }

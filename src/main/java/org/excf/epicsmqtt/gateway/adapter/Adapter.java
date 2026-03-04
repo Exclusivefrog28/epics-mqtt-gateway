@@ -4,35 +4,43 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
-import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 public abstract class Adapter {
     @Inject
     protected Bridge bridge;
 
-    public Uni<PVValue> getHosted(String channel) {
+    public String protocol() {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public Multi<PV> monitorHosted(String channel){
+    public Uni<PVValue> getHosted(String name) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
-    public Uni<Void> putHosted(PV pv) {
+    public Multi<PVValue> monitorHosted(String name) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    public Uni<Void> putHosted(String name, PVValue pvValue) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
 
-    public Uni<PVValue> getExternalCached(String channel) {
-        return bridge.getExternalCached(channel);
+    public Uni<PVValue> getExternalCached(String name) {
+        return bridge.getExternalCached(protocol(), name);
     }
 
-    public Uni<PVValue> getExternal(String channel) {
-        return bridge.getExternal(channel);
+    public Uni<PVValue> getExternal(String name) {
+        return bridge.getExternal(protocol(), name);
     }
 
-    public Uni<Void> putExternal(PV pv) {
-        return bridge.putExternal(pv);
+    public Multi<PVValue> addExternalMonitor(String name) {
+        return bridge.monitorExternal(protocol(), name)
+                .onItem().transform(pv -> pv.pvValue);
+    }
+
+    public Uni<Void> putExternal(String name, PVValue pvValue) {
+        return bridge.putExternal(protocol(), name, pvValue);
     }
 }

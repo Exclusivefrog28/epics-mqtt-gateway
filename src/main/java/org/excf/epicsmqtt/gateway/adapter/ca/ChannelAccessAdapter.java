@@ -10,15 +10,21 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.inject.Named;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
-import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.time.Instant;
 
 @ApplicationScoped
+@Named("ca")
 public class ChannelAccessAdapter extends Adapter {
+
+    @Override
+    public String protocol() {
+        return "ca";
+    }
 
     private ServerContext caServer;
 
@@ -37,24 +43,19 @@ public class ChannelAccessAdapter extends Adapter {
     private Thread caServerThread;
 
     @Override
-    public Uni<PVValue> getHosted(String channel) {
-        return caClient.get(channel).onItem().transform(this::convertDBRToPVValue);
+    public Uni<PVValue> getHosted(String name) {
+        return caClient.get(name).onItem().transform(this::convertDBRToPVValue);
     }
 
     @Override
-    public Multi<PV> monitorHosted(String channel) {
-        return caClient.attachMonitor(channel)
-                .onItem().transform(this::convertDBRToPVValue)
-                .onItem().transform(pvValue -> new PV(channel, pvValue, true));
+    public Multi<PVValue> monitorHosted(String name) {
+        return caClient.attachMonitor(name)
+                .onItem().transform(this::convertDBRToPVValue);
     }
 
     @Override
-    public Uni<Void> putHosted(PV pv) {
-        return caClient.put(pv.pvName, pv.pvValue.value);
-    }
-
-    public Multi<PV> addExternalMonitor(String channel) {
-        return bridge.monitorExternal(channel);
+    public Uni<Void> putHosted(String name, PVValue pvValue) {
+        return caClient.put(name, pvValue.value);
     }
 
     PVValue convertDBRToPVValue(DBR dbr) {
@@ -116,8 +117,7 @@ public class ChannelAccessAdapter extends Adapter {
 
             caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
                     new CAServer(this));
-            caClient = new CAClient(JCALibrary.getInstance().createContext(JCALibrary.CHANNEL_ACCESS_JAVA),
-                    this);
+            caClient = new CAClient(JCALibrary.getInstance().createContext(JCALibrary.CHANNEL_ACCESS_JAVA));
 
             caServerThread = new Thread(() -> {
                 try {

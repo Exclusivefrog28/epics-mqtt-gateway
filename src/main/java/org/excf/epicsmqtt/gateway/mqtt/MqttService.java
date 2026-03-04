@@ -26,6 +26,7 @@ import org.reactivestreams.FlowAdapters;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 
 @ApplicationScoped
 public class MqttService {
@@ -77,7 +78,7 @@ public class MqttService {
     }
 
 
-    public Multi<SignedMessage> subscribe(String topicFilter) {
+    public Multi<MQTTMessage> subscribe(String topicFilter) {
         Mqtt5Subscribe subscribeMessage = Mqtt5Subscribe.builder()
                 .topicFilter(topicFilter)
                 .qos(MqttQos.AT_LEAST_ONCE)
@@ -88,7 +89,7 @@ public class MqttService {
                                 client.subscribePublishes(subscribeMessage)
                         )
                 )
-                .onItem().transform(SignedMessage::new)
+                .onItem().transform(MQTTMessage::new)
                 .skip().repetitions();
     }
 
@@ -101,9 +102,13 @@ public class MqttService {
     }
 
     public Uni<Void> publish(String topic, PV pv) {
+        return publish(topic, pv, true);
+    }
+
+    public Uni<Void> publish(String topic, PV pv, Boolean retain) {
         try {
             byte[] payload = mapper.writeValueAsBytes(pv);
-            return doPublish(topic, payload, true);
+            return doPublish(topic, payload, retain);
         } catch (JsonProcessingException e) {
             return Uni.createFrom().failure(e);
         }
@@ -125,7 +130,10 @@ public class MqttService {
                                                     .topic(topic)
                                                     .qos(MqttQos.AT_LEAST_ONCE)
                                                     .retain(retain)
-                                                    .payload(SignedMessage.signMessage(payload))
+                                                    .payload(payload)
+                                                    .userProperties()
+                                                    .add("UUID", UUID.randomUUID().toString())
+                                                    .applyUserProperties()
                                                     .build()
                                     ))
                             )

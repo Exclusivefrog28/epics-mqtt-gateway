@@ -78,8 +78,8 @@ public class CAServer implements Server {
             super.interestRegister();
             if (subscription == null)
                 subscription = adapter.addExternalMonitor(name)
-                        .onItem().transform(pv ->
-                                fillDBR(DBRType.forValue(pv.pvValue.type).newInstance(pv.pvValue.getCount()), pv.pvValue))
+                        .onItem().transform(pvValue ->
+                                fillDBR(DBRType.forValue(pvValue.type).newInstance(pvValue.getCount()), pvValue))
                         .onItem().invoke(dbr -> getEventCallback().postEvent(Monitor.VALUE, dbr))
                         .onFailure().recoverWithItem(th -> null)
                         .subscribe().with(
@@ -125,7 +125,7 @@ public class CAServer implements Server {
             try {
                 PVValue newValue = adapter.convertDBRToPVValue(dbr);
 
-                adapter.putExternal(new PV(name, newValue))
+                adapter.putExternal(name, newValue)
                         .subscribe().with(
                                 success -> writeCallback.processVariableWriteCompleted(CAStatus.NORMAL),
                                 failure -> {

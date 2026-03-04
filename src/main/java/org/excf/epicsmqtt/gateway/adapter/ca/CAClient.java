@@ -22,11 +22,8 @@ public class CAClient {
 
     ConcurrentHashMap<String, Uni<Channel>> openChannels;
 
-    private final ChannelAccessAdapter adapter;
-
-    public CAClient(Context context, ChannelAccessAdapter adapter) {
+    public CAClient(Context context) {
         this.context = context;
-        this.adapter = adapter;
         openChannels = new ConcurrentHashMap<>();
     }
 

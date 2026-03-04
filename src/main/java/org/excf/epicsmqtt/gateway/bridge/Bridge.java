@@ -7,15 +7,15 @@ import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.inject.Inject;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
-import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MqttService;
-import org.excf.epicsmqtt.gateway.mqtt.SignedMessage;
+import org.excf.epicsmqtt.gateway.mqtt.MQTTMessage;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -33,8 +33,13 @@ public class Bridge {
     @Inject
     PVCache pvCache;
 
+    // map topics to adapters
     protected Map<String, Adapter> adapters = new HashMap<>();
-    protected Map<String, String> topicMap = new ConcurrentHashMap<>();
+
+    // map protocols and local names to topics
+    protected Map<String, Map<String, String>> topicMap = new ConcurrentHashMap<>();
+
+    // map topics to monitor streams
     protected Map<String, Cancellable> monitors = new HashMap<>();
 
     @Inject
@@ -44,40 +49,43 @@ public class Bridge {
     MqttService mqttService;
 
     public void registerHosted(HostedChannel channel) {
-        topicMap.put(channel.pvName, channel.mqttTopic);
-        for (Adapter a : adapterInstances) {
-            if (a instanceof ChannelAccessAdapter) {
-                adapters.put(channel.pvName, a);
-                if (channel.monitor)
-                    addMonitor(channel, a);
-                else
-                    mqttService.subscribe(channel.mqttTopic + "/MONITOR")
-                            .onItem().transformToUniAndConcatenate(request ->
-                                    parseBooleanMessage(request)
-                                            .onItem().invoke(shouldMonitor -> {
-                                                if (shouldMonitor) addMonitor(channel, a);
-                                            })
-                            ).subscribe().with(unused -> {
-                            }, e -> Log.error("MQTT stream error", e));
+        topicMap.computeIfAbsent(channel.protocol, (unused) -> new HashMap<>())
+                .put(channel.getSourceName(), channel.mqttTopic);
 
-                mqttService.subscribe(channel.mqttTopic + "/GET")
-                        .onItem().transformToUniAndConcatenate(request ->
-                                a.getHosted(channel.pvName)
-                                        .onItem().transform(pvValue -> new PV(channel.pvName, pvValue))
-                                        .chain(this::update)
-                                        .onFailure().recoverWithNull()
-                        ).subscribe().with(unused -> {
-                        }, e -> Log.error("MQTT stream error", e));
-            }
-        }
+        Adapter adapter = adapterInstances.select(NamedLiteral.of(channel.protocol)).get();
+
+        adapters.put(channel.mqttTopic, adapter);
+        if (channel.monitor)
+            addMonitor(channel, adapter);
+        else
+            mqttService.subscribe(channel.mqttTopic + "/MONITOR")
+                    .onItem().transformToUniAndConcatenate(request ->
+                            parseBooleanMessage(request)
+                                    .onItem().invoke(shouldMonitor -> {
+                                        if (shouldMonitor) addMonitor(channel, adapter);
+                                    })
+                    ).subscribe().with(unused -> {
+                    }, e -> Log.error("MQTT stream error", e));
+
+        mqttService.subscribe(channel.mqttTopic + "/GET")
+                .onItem().transformToUniAndConcatenate(request ->
+                        adapter.getHosted(channel.getSourceName())
+                                .onItem().transform(pvValue -> new PV(channel.localNames, pvValue))
+                                .chain((pv) -> this.update(channel.mqttTopic, pv))
+                                .onFailure().recoverWithNull()
+                ).subscribe().with(unused -> {
+                }, e -> Log.error("MQTT stream error", e));
+
 
         mqttService.subscribe(channel.mqttTopic + "/PUT")
                 .onItem().transformToUniAndConcatenate(message ->
                         parseMessage(message)
-                                .chain(this::handledHostedPut)
+                                .chain((pv) -> adapter.putHosted(channel.getSourceName(), pv.pvValue))
+//                                .chain(unused -> adapter.getHosted(channel.getSourceName()))
+//                                .chain((pvValue) -> update(channel.mqttTopic, new PV(channel.localNames, pvValue)))
+                                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new)
                                 .onFailure().recoverWithNull()
-                )
-                .subscribe().with(unused -> {
+                ).subscribe().with(unused -> {
                 }, e -> Log.error("MQTT stream error", e));
     }
 
@@ -86,12 +94,17 @@ public class Bridge {
             monitors.get(channel.mqttTopic).cancel();
             monitors.remove(channel.mqttTopic);
         }
-        adapters.remove(channel.pvName);
+        adapters.remove(channel.mqttTopic);
         mqttService.unsubscribe(channel.mqttTopic);
     }
 
     public void registerExternal(ExternalChannel channel) {
-        topicMap.put(channel.pvName, channel.mqttTopic);
+        // if protocol names are configured, they will be added to the map,
+        // otherwise they're only loaded once a message is received
+        channel.localNames.forEach((protocol, localName) ->
+                topicMap.computeIfAbsent(protocol, (unused) -> new HashMap<>())
+                        .put(localName, channel.mqttTopic)
+        );
         mqttService.subscribe(channel.mqttTopic)
                 .onItem().transformToUniAndConcatenate(message ->
                         parseMessage(message)
@@ -102,28 +115,18 @@ public class Bridge {
                 }, e -> Log.error("MQTT stream error", e));
     }
 
-    public void removeExternal(String pvName) {
-        mqttService.unsubscribe(topicMap.get(pvName));
+    public void removeExternal(String topic) {
+        // TODO: remove topicMap entries associated with the channel + remove monitors
+        mqttService.unsubscribe(topic);
     }
 
     public void registerAll(Collection<HostedChannel> hostedChannels) {
         if (hostedChannels != null)
-            for (HostedChannel hostedChannel : hostedChannels) {
-                for (Adapter a : adapterInstances) {
-                    if (a instanceof ChannelAccessAdapter) {
-                        adapters.put(hostedChannel.pvName, a);
-                        if (hostedChannel.monitor)
-                            a.monitorHosted(hostedChannel.pvName)
-                                    .onItem().transformToUniAndConcatenate(this::update)
-                                    .onFailure().recoverWithItem(unused -> null)
-                                    .subscribe().with(unused -> {
-                                    }, e -> Log.error("Monitor stream error", e));
-                    }
-                }
-            }
+            for (HostedChannel hostedChannel : hostedChannels)
+                registerHosted(hostedChannel);
 
         // noLocal subscription should prevent hosted channels from receiving their own updates
-        mqttService.subscribe("pv/#")
+        mqttService.subscribe("pv/+")
                 .onItem().transformToUniAndConcatenate(message ->
                         parseMessage(message)
                                 .chain(this::handleExternal)
@@ -133,7 +136,7 @@ public class Bridge {
                 }, e -> Log.error("MQTT stream error", e));
     }
 
-    private Uni<Boolean> parseBooleanMessage(SignedMessage message) {
+    private Uni<Boolean> parseBooleanMessage(MQTTMessage message) {
         try {
             return Uni.createFrom().item(mapper.readValue(message.getPayloadAsBytes(), Boolean.class));
         } catch (Exception e) {
@@ -141,7 +144,7 @@ public class Bridge {
         }
     }
 
-    private Uni<PV> parseMessage(SignedMessage message) {
+    private Uni<PV> parseMessage(MQTTMessage message) {
         try {
             PV pv = mapper.readValue(message.getPayloadAsBytes(), PV.class);
             pv.topic = message.getTopic();
@@ -153,29 +156,16 @@ public class Bridge {
     }
 
     private void addMonitor(HostedChannel channel, Adapter adapter) {
-        monitors.put(channel.mqttTopic, adapter.monitorHosted(channel.pvName)
-                .onItem().transformToUniAndConcatenate(this::update)
+        monitors.put(channel.mqttTopic, adapter.monitorHosted(channel.getSourceName())
+                .onItem().transformToUniAndConcatenate((pvValue) -> update(channel.mqttTopic, new PV(channel.localNames, pvValue, true)))
                 .onFailure().recoverWithItem(unused -> null)
                 .subscribe().with(unused -> {
                 }, e -> Log.error("Monitor stream error", e)));
     }
 
-    private Uni<Void> handledHostedPut(PV pv) {
-        if (!adapters.containsKey(pv.pvName)) {
-            Log.warnf("No adapter registered for hosted channel %s", pv.pvName);
-            return Uni.createFrom().failure(new RuntimeException("No adapter registered for hosted channel " + pv.pvName));
-        }
-
-        Adapter adapter = adapters.get(pv.pvName);
-        return adapter.putHosted(pv)
-                .chain(unused -> adapter.getHosted(pv.pvName))
-                .onItem().transform(pvValue -> new PV(pv.pvName, pvValue))
-                .chain(this::update)
-                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new);
-    }
-
     private Uni<Void> handleExternal(PV pv) {
-        topicMap.putIfAbsent(pv.pvName, pv.topic);
+        // adds unknown names to the topicMap but keeps original entries for local aliasing
+        pv.localNames.forEach(topicMap.computeIfAbsent(pv.topic, unused -> new HashMap<>())::putIfAbsent);
         pvCache.add(pv);
         return Uni.createFrom().nullItem();
     }
@@ -184,29 +174,30 @@ public class Bridge {
      * Only retrieves the in-memory value for the PV,
      * Requests it over MQTT if that doesn't exist
      */
-    public Uni<PVValue> getExternalCached(String channel) {
-        return pvCache.getCached(topicMap.get(channel));
+    public Uni<PVValue> getExternalCached(String protocol, String localName) {
+        return pvCache.getCached(topicMap.get(protocol).get(localName));
     }
 
     /**
      * Requests the value of the PV over MQTT,
      * unless it is monitored (in which case the cache should be up to date)
      */
-    public Uni<PVValue> getExternal(String channel) {
-        return pvCache.get(topicMap.get(channel));
+    public Uni<PVValue> getExternal(String protocol, String localName) {
+        return pvCache.get(topicMap.get(protocol).get(localName));
     }
 
-    public Uni<Void> update(PV pv) {
-        return mqttService.publish(topicMap.get(pv.pvName), pv);
+    public Uni<Void> update(String topic, PV pv) {
+        return mqttService.publish(topic, pv);
     }
 
-    public Uni<Void> putExternal(PV pv) {
-        return mqttService.publish(topicMap.get(pv.pvName) + "/PUT", pv);
+    public Uni<Void> putExternal(String protocol, String localName, PVValue pvValue) {
+        return mqttService.publish(topicMap.get(protocol).get(localName) + "/PUT", new PV(pvValue), false);
     }
 
-    public Multi<PV> monitorExternal(String channel) {
-        return mqttService.subscribe(topicMap.get(channel))
-                .onSubscription().call(() -> mqttService.publish(topicMap.get(channel) + "/MONITOR", "true"))
+    public Multi<PV> monitorExternal(String protocol, String localName) {
+        String baseTopic = topicMap.get(protocol).get(localName);
+        return mqttService.subscribe(baseTopic)
+                .onSubscription().call(() -> mqttService.publish(baseTopic + "/MONITOR", "true"))
                 .onItem().transformToUniAndConcatenate(this::parseMessage);
     }
 

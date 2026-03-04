@@ -2,24 +2,30 @@ package org.excf.epicsmqtt.gateway.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import java.util.Map;
+
 public class PV {
-    public String pvName;
+    public Map<String, String> localNames;
     public PVValue pvValue;
     public boolean monitored = false;
 
-    @JsonIgnore
     // Topic this PV arrived from
+    @JsonIgnore
     public String topic;
 
     public PV(){}
 
-    public PV(String pvName, PVValue pvValue) {
-        this.pvName = pvName;
+    public PV(PVValue pvValue) {
         this.pvValue = pvValue;
     }
 
-    public PV(String pvName, PVValue pvValue, boolean monitored) {
-        this.pvName = pvName;
+    public PV(Map<String, String> localNames, PVValue pvValue) {
+        this.localNames = localNames;
+        this.pvValue = pvValue;
+    }
+
+    public PV(Map<String, String> localNames, PVValue pvValue, boolean monitored) {
+        this.localNames = localNames;
         this.pvValue = pvValue;
         this.monitored = monitored;
     }
