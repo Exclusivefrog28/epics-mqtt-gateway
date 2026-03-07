@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway;
+package org.excf.epicsmqtt.gateway.test.ca;
 
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import org.testcontainers.containers.GenericContainer;

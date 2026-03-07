@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway;
+package org.excf.epicsmqtt.gateway.test.ca;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gov.aps.jca.dbr.DBR;
@@ -16,7 +16,7 @@ import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
-import org.excf.epicsmqtt.gateway.mqtt.MqttService;
+import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -44,7 +44,7 @@ public class ChannelAccessCoreTest {
     ChannelAccessAdapter adapter;
 
     @Inject
-    MqttService mqttService;
+    MQTTAdapter mqttAdapter;
 
     @Inject
     TestClient testClient;
@@ -72,13 +72,13 @@ public class ChannelAccessCoreTest {
         pvValue.value = new int[]{randomInt};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic + "/PUT", new PV(pvValue), false).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic + "/PUT", new PV(pvValue), false).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> Assertions.assertEquals(randomInt,
                         ((int[]) adapter.getHosted(channel.getSourceName()).await().indefinitely().value)[0]));
 
-        bridge.removeHosted(channel);
+        bridge.removeHosted(channel.mqttTopic);
     }
 
     /**
@@ -99,7 +99,7 @@ public class ChannelAccessCoreTest {
 
         bridge.registerHosted(channel);
 
-        mqttService.publish(channel.mqttTopic + "/MONITOR", "true").await().atMost(Duration.ofSeconds(5));
+        mqttAdapter.publishBoolean(channel.mqttTopic + "/MONITOR", true).await().atMost(Duration.ofSeconds(5));
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -111,7 +111,7 @@ public class ChannelAccessCoreTest {
                     Assertions.assertTrue(receivedValues.size() > 2);
                 });
 
-        bridge.removeHosted(channel);
+        bridge.removeHosted(channel.mqttTopic);
     }
 
     /**
@@ -202,7 +202,7 @@ public class ChannelAccessCoreTest {
         pvValue.value = new double[]{0};
         pvValue.timestamp = Instant.now();
 
-        mqttService.publish(channel.mqttTopic, new PV(channel.localNames, pvValue, true)).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true).await().indefinitely();
 
         AssertSubscriber<Double> subscriber =
                 caClient.attachMonitor("remote:monitored:pv")
@@ -213,11 +213,11 @@ public class ChannelAccessCoreTest {
 
         double[] testValue1 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue1;
-        mqttService.publish(channel.mqttTopic, new PV(channel.localNames, pvValue, true)).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true).await().indefinitely();
 
         double[] testValue2 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue2;
-        mqttService.publish(channel.mqttTopic, new PV(channel.localNames, pvValue, true)).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true).await().indefinitely();
 
         subscriber
                 .awaitItems(2)

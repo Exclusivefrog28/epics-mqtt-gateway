@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway;
+package org.excf.epicsmqtt.gateway.test.ca;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gov.aps.jca.dbr.DBR;
@@ -15,7 +15,7 @@ import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
-import org.excf.epicsmqtt.gateway.mqtt.MqttService;
+import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,7 +40,7 @@ public class ChannelAccessEnumTest {
     ChannelAccessAdapter adapter;
 
     @Inject
-    MqttService mqttService;
+    MQTTAdapter mqttAdapter;
 
     @Inject
     ObjectMapper mapper;
@@ -66,7 +66,7 @@ public class ChannelAccessEnumTest {
         pvValue.value = new short[]{1};
 
         bridge.registerHosted(channel);
-        mqttService.publish(channel.mqttTopic + "/PUT", new PV(pvValue)).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic + "/PUT", new PV(pvValue), false).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -75,7 +75,7 @@ public class ChannelAccessEnumTest {
                 });
 
         pvValue.value = new short[]{2};
-        mqttService.publish(channel.mqttTopic + "/PUT", new PV(channel.localNames, pvValue)).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic + "/PUT", new PV(channel.localNames, pvValue), false).await().indefinitely();
 
         await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
                 () -> {
@@ -83,7 +83,7 @@ public class ChannelAccessEnumTest {
                     Assertions.assertEquals("RGB2", response.metadata.labels[((short[]) response.value)[0]]);
                 });
 
-        bridge.removeHosted(channel);
+        bridge.removeHosted(channel.mqttTopic);
     }
 
 

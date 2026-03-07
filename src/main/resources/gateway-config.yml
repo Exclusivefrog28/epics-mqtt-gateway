@@ -1,12 +1,13 @@
 hosted:
 #  - alias: hosted_test
 #    mqttTopic: pv/hosted
-#    pvName: BL01T-EA-TST-02:UPTIME
+#    protocol: ca
+#    localNames:
+#      ca: BL01T-EA-TST-02:UPTIME
 #    mode: READ_ONLY
 #    monitor: true
 #
 external:
 #  - alias: external_test
 #    mqttTopic: pv/external
-#    pvName: EXTERNAL:PV:01
 #    mode: READ_WRITE

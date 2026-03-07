@@ -36,8 +36,7 @@ public abstract class Adapter {
     }
 
     public Multi<PVValue> addExternalMonitor(String name) {
-        return bridge.monitorExternal(protocol(), name)
-                .onItem().transform(pv -> pv.pvValue);
+        return bridge.monitorExternal(protocol(), name);
     }
 
     public Uni<Void> putExternal(String name, PVValue pvValue) {

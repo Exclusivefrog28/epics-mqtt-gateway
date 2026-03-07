@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway;
+package org.excf.epicsmqtt.gateway.test.ca;
 
 import com.cosylab.epics.caj.CAJContext;
 import gov.aps.jca.configuration.ConfigurationException;

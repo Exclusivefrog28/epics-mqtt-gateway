@@ -1,7 +1,5 @@
 package org.excf.epicsmqtt.gateway.mqtt;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemq.client.mqtt.MqttClient;
 import com.hivemq.client.mqtt.MqttClientState;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
@@ -21,7 +19,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.excf.epicsmqtt.gateway.model.PV;
 import org.reactivestreams.FlowAdapters;
 
 import java.nio.charset.StandardCharsets;
@@ -32,9 +29,6 @@ import java.util.UUID;
 public class MqttService {
     @Inject
     OidcClient oidcClient;
-
-    @Inject
-    ObjectMapper mapper;
 
     @ConfigProperty(name = "mqtt.host")
     String host;
@@ -93,32 +87,7 @@ public class MqttService {
                 .skip().repetitions();
     }
 
-    public void unsubscribe(String topicFilter) {
-        Uni.createFrom().publisher(
-                FlowAdapters.toFlowPublisher(
-                        client.unsubscribeWith().topicFilter(topicFilter).applyUnsubscribe().toFlowable()
-                )
-        ).await().indefinitely();
-    }
-
-    public Uni<Void> publish(String topic, PV pv) {
-        return publish(topic, pv, true);
-    }
-
-    public Uni<Void> publish(String topic, PV pv, Boolean retain) {
-        try {
-            byte[] payload = mapper.writeValueAsBytes(pv);
-            return doPublish(topic, payload, retain);
-        } catch (JsonProcessingException e) {
-            return Uni.createFrom().failure(e);
-        }
-    }
-
-    public Uni<Void> publish(String topic, String payload) {
-        return doPublish(topic, payload.getBytes(StandardCharsets.UTF_8), false);
-    }
-
-    private Uni<Void> doPublish(String topic, byte[] payload, boolean retain) {
+    public Uni<Void> publish(String topic, byte[] payload, boolean retain) {
         return Uni.createFrom().deferred(() -> {
                     if (client == null || !client.getState().isConnected())
                         return Uni.createFrom().failure(new RuntimeException("Client Disconnected"));
