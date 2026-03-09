@@ -107,7 +107,7 @@ public class ChannelAccessAdapter extends Adapter {
         return pvValue;
     }
 
-    public void startup(@Observes StartupEvent ev) {
+    void startup(@Observes StartupEvent ev) {
         try {
             System.setProperty("com.cosylab.epics.caj.CAJContext.addr_list", clientAddrList);
             System.setProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", clientAutoAddrList);
@@ -132,7 +132,7 @@ public class ChannelAccessAdapter extends Adapter {
         }
     }
 
-    public void cleanup(@Observes ShutdownEvent ev) {
+    void cleanup(@Observes ShutdownEvent ev) {
         try {
             if (caServer != null)
                 caServer.shutdown();

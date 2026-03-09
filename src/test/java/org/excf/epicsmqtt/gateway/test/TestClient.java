@@ -1,4 +1,4 @@
-package org.excf.epicsmqtt.gateway.test.ca;
+package org.excf.epicsmqtt.gateway.test;
 
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.Cancellable;
@@ -20,7 +20,7 @@ public class TestClient {
 
     ConcurrentMap<String, Cancellable> subscriptions = new ConcurrentHashMap<>();
 
-    void addPV(String topic, PV pv) {
+    public void addPV(String topic, PV pv) {
         subscriptions.put(topic + "/GET",
                 mqttAdapter.subscribe(topic + "/GET",
                         (unused) -> mqttAdapter.publishPV(topic, pv, true)
@@ -28,11 +28,11 @@ public class TestClient {
         );
     }
 
-    void removePV(String topic) {
+    public void removePV(String topic) {
         unsubscribe(topic + "/GET");
     }
 
-    AtomicReference<byte[]> subscribe(String topic) {
+    public AtomicReference<byte[]> subscribe(String topic) {
 
         AtomicReference<byte[]> lastMessage = new AtomicReference<>(null);
 
@@ -47,7 +47,7 @@ public class TestClient {
         return lastMessage;
     }
 
-    void unsubscribe(String topic) {
+    public void unsubscribe(String topic) {
         subscriptions.remove(topic).cancel();
     }
 

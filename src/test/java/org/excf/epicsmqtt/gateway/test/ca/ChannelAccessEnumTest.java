@@ -16,6 +16,7 @@ import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
+import org.excf.epicsmqtt.gateway.test.TestClient;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
 @QuarkusTest
-@QuarkusTestResource(EpicsIocResource.class)
+@QuarkusTestResource(value = EpicsIocResource.class, restrictToAnnotatedClass = true)
 @Tag("channel-access")
 @Tag("ca-enum")
 public class ChannelAccessEnumTest {

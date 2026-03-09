@@ -10,21 +10,13 @@ public abstract class Adapter {
     @Inject
     protected Bridge bridge;
 
-    public String protocol() {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+    public abstract String protocol();
 
-    public Uni<PVValue> getHosted(String name) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+    public abstract Uni<PVValue> getHosted(String name);
 
-    public Multi<PVValue> monitorHosted(String name) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+    public abstract Multi<PVValue> monitorHosted(String name);
 
-    public Uni<Void> putHosted(String name, PVValue pvValue) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+    public abstract Uni<Void> putHosted(String name, PVValue pvValue);
 
 
     public Uni<PVValue> getExternalCached(String name) {

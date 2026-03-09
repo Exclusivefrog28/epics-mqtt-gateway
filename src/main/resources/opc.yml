@@ -1,0 +1,5 @@
+PVs:
+  alias: opcTest
+  data: ns=2;s=RandomUnsignedInt32
+  meta:
+    units: "unit"
