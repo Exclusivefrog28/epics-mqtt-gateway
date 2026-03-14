@@ -1,6 +1,9 @@
 package org.excf.epicsmqtt.gateway.adapter.opc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gov.aps.jca.dbr.DBRType;
+import gov.aps.jca.dbr.Severity;
+import gov.aps.jca.dbr.Status;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
@@ -8,6 +11,7 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
@@ -21,29 +25,47 @@ import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.ULong;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UShort;
 import org.eclipse.milo.opcua.stack.core.util.EndpointUtil;
-import org.eclipse.milo.opcua.stack.core.util.SelfSignedCertificateBuilder;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
+import org.excf.epicsmqtt.gateway.adapter.opc.config.OPCConfig;
+import org.excf.epicsmqtt.gateway.config.yaml.Yaml;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.cert.X509Certificate;
+import java.io.InputStream;
 import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @ApplicationScoped
 @Named("opc")
 public class OPCAdapter extends Adapter {
     private OPCClient opcClient;
+    private Map<String, OPCConfig.OPCConfigEntry> opcConfig;
+
+    @Inject
+    @Yaml
+    ObjectMapper mapper;
 
     @Override
     public String protocol() {
         return "opc";
     }
 
+    public void setOpcConfig(Map<String, OPCConfig.OPCConfigEntry> opcConfig) {
+        this.opcConfig = opcConfig;
+    }
+
     @Override
     public Uni<PVValue> getHosted(String name) {
         if (opcClient == null) return Uni.createFrom().failure(new IllegalArgumentException("OPC client hasn't been initialized"));
+
+        if (opcConfig != null && opcConfig.containsKey(name)) {
+            OPCConfig.OPCConfigEntry config = opcConfig.get(name);
+            return opcClient.get(config.data)
+                    .map(this::convertDataValuetoPVValue)
+                    .map(pvValue -> fillAlarm(pvValue, config))
+                    .onFailure().invoke(e -> Log.warn("OPC get exception", e));
+        }
 
         return opcClient.get(name)
                 .map(this::convertDataValuetoPVValue)
@@ -67,6 +89,18 @@ public class OPCAdapter extends Adapter {
 
 
     void startup(@Observes StartupEvent ev) throws Exception {
+        try (InputStream is = Thread.currentThread().getContextClassLoader()
+                .getResourceAsStream("opc.yml")) {
+            if (is != null) {
+                Log.warn("No gateway-config.yml found, skipping configuration.");
+
+                opcConfig = mapper.readValue(is, OPCConfig.class).items;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load opc.yml", e);
+        }
+
+
         Optional<String> clientUrl = ConfigProvider.getConfig().getOptionalValue("opc.client.url", String.class);
         Optional<String> clientHost = ConfigProvider.getConfig().getOptionalValue("opc.client.host", String.class);
 
@@ -81,7 +115,7 @@ public class OPCAdapter extends Adapter {
                     clientConfig ->
                             clientConfig
                                     .setApplicationName(LocalizedText.english("EPICS MQTT Gateway"))
-                                    .setApplicationUri("org:excf:org:epics")
+                                    .setApplicationUri("org:excf:epics")
             ));
 
     }
@@ -95,7 +129,36 @@ public class OPCAdapter extends Adapter {
         Object opcValue = variant.getValue();
 
         PVValue pvValue = new PVValue();
-        pvValue.timestamp = Instant.now();
+        pvValue.timestamp = dataValue.getSourceTime() != null ? dataValue.getSourceTime().getJavaInstant() : Instant.now();
+
+        switch ((int) dataValue.getStatusCode().getValue()) {
+            case 0 -> { // StatusCodes0.Good
+                pvValue.setStatus(Status.NO_ALARM);
+                pvValue.setSeverity(Severity.NO_ALARM);
+            }
+            case (int) 0x80310000L -> { // Bad_NoCommunication
+                pvValue.setStatus(Status.COMM_ALARM);
+                pvValue.setSeverity(Severity.MAJOR_ALARM);
+            }
+            case (int) 0x80850000L -> { // Bad_RequestTimeout
+                pvValue.setStatus(Status.TIMEOUT_ALARM);
+                pvValue.setSeverity(Severity.MAJOR_ALARM);
+            }
+            case (int) 0x803A0000L -> { // Bad_NotReadable
+                pvValue.setStatus(Status.READ_ACCESS_ALARM);
+                pvValue.setSeverity(Severity.MAJOR_ALARM);
+            }
+            case (int) 0x803B0000L -> { // Bad_NotWritable
+                pvValue.setStatus(Status.WRITE_ACCESS_ALARM);
+                pvValue.setSeverity(Severity.MAJOR_ALARM);
+            }
+            default -> {
+                pvValue.setStatus(Status.READ_ALARM);
+                pvValue.setSeverity(Severity.INVALID_ALARM);
+            }
+        }
+
+        if (opcValue == null) return pvValue;
 
         opcValue = switch (opcValue) {
             case Byte by -> by.byteValue();
@@ -113,8 +176,6 @@ public class OPCAdapter extends Adapter {
             case LocalizedText lt -> lt.getText();
             default -> opcValue.toString();
         };
-
-        if (opcValue == null) throw new IllegalArgumentException("OPC value is null");
 
         switch (opcValue) {
             case Byte by -> {
@@ -141,7 +202,7 @@ public class OPCAdapter extends Adapter {
                 pvValue.value = new String[]{st};
                 pvValue.setDBRType(DBRType.STRING);
             }
-            default -> throw new IllegalStateException("Unexpected value: " + opcValue);
+            case null, default -> throw new IllegalStateException("Unexpected value: " + opcValue);
         }
 
         return pvValue;
@@ -152,22 +213,45 @@ public class OPCAdapter extends Adapter {
         if (currentValue == null) throw new IllegalArgumentException("OPC value is null");
 
         Variant variant = switch (currentValue) {
-            case Boolean un -> Variant.ofBoolean(Boolean.parseBoolean(((String[]) pvValue.value)[0]));
-            case Byte un -> Variant.ofSByte(((byte[]) pvValue.value)[0]);
-            case UByte un -> Variant.ofByte(UByte.valueOf(((byte[]) pvValue.value)[0]));
-            case Short un -> Variant.ofInt16((short) ((int[]) pvValue.value)[0]);
-            case UShort un -> Variant.ofUInt16(UShort.valueOf(((int[]) pvValue.value)[0]));
-            case Integer un -> Variant.ofInt32(((int[]) pvValue.value)[0]);
-            case UInteger un -> Variant.ofUInt32(UInteger.valueOf(((int[]) pvValue.value)[0]));
-            case Long un -> Variant.ofInt64(((int[]) pvValue.value)[0]);
-            case ULong un -> Variant.ofUInt64(ULong.valueOf(((int[]) pvValue.value)[0]));
-            case Float un -> Variant.ofFloat(((float[]) pvValue.value)[0]);
-            case Double un -> Variant.ofDouble(((double[]) pvValue.value)[0]);
-            case ByteString un -> Variant.ofByteString(ByteString.of((byte[]) pvValue.value));
+            case Boolean ignored -> Variant.ofBoolean(Boolean.parseBoolean(((String[]) pvValue.value)[0]));
+            case Byte ignored -> Variant.ofSByte(((byte[]) pvValue.value)[0]);
+            case UByte ignored -> Variant.ofByte(UByte.valueOf(((byte[]) pvValue.value)[0]));
+            case Short ignored -> Variant.ofInt16((short) ((int[]) pvValue.value)[0]);
+            case UShort ignored -> Variant.ofUInt16(UShort.valueOf(((int[]) pvValue.value)[0]));
+            case Integer ignored -> Variant.ofInt32(((int[]) pvValue.value)[0]);
+            case UInteger ignored -> Variant.ofUInt32(UInteger.valueOf(((int[]) pvValue.value)[0]));
+            case Long ignored -> Variant.ofInt64(((int[]) pvValue.value)[0]);
+            case ULong ignored -> Variant.ofUInt64(ULong.valueOf(((int[]) pvValue.value)[0]));
+            case Float ignored -> Variant.ofFloat(((float[]) pvValue.value)[0]);
+            case Double ignored -> Variant.ofDouble(((double[]) pvValue.value)[0]);
+            case ByteString ignored -> Variant.ofByteString(ByteString.of((byte[]) pvValue.value));
             default -> Variant.ofString(((String[]) pvValue.value)[0]);
         };
 
         return DataValue.valueOnly(variant);
     }
 
+    private PVValue fillAlarm(PVValue pvValue, OPCConfig.OPCConfigEntry config) {
+        if (config == null) return pvValue;
+        pvValue.metadata = config.meta;
+        if (config.alarm == null) return pvValue;
+        OPCConfig.OPCAlarmConfig alarmConfig = config.alarm;
+        double value = pvValue.getDoubleValue();
+
+        if (!Objects.equals(alarmConfig.hhsv, "NO_ALARM") && value >= config.meta.upperAlarmLimit.doubleValue()) {
+            pvValue.setStatus(Status.HIHI_ALARM);
+            pvValue.setSeverity(Severity.forName(alarmConfig.hhsv));
+        } else if (!Objects.equals(alarmConfig.hsv, "NO_ALARM") && value >= config.meta.upperWarningLimit.doubleValue()) {
+            pvValue.setStatus(Status.HIGH_ALARM);
+            pvValue.setSeverity(Severity.forName(alarmConfig.hsv));
+        } else if (!Objects.equals(alarmConfig.lsv, "NO_ALARM") && value <= config.meta.lowerWarningLimit.doubleValue()) {
+            pvValue.setStatus(Status.HIHI_ALARM);
+            pvValue.setSeverity(Severity.forName(alarmConfig.lsv));
+        } else if (!Objects.equals(alarmConfig.llsv, "NO_ALARM") && value <= config.meta.lowerAlarmLimit.doubleValue()) {
+            pvValue.setStatus(Status.LOW_ALARM);
+            pvValue.setSeverity(Severity.forName(alarmConfig.llsv));
+        }
+
+        return pvValue;
+    }
 }

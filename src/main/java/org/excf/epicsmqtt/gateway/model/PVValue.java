@@ -1,6 +1,7 @@
 package org.excf.epicsmqtt.gateway.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.Severity;
@@ -14,7 +15,9 @@ public class PVValue {
 
     public int type;
     public Instant timestamp;
+    @JsonProperty("status")
     public int status;
+    @JsonProperty("severity")
     public int severity;
     public PVMetadata metadata = new PVMetadata();
 
@@ -65,6 +68,18 @@ public class PVValue {
             case short[] sh -> sh.length;
             case float[] fl -> fl.length;
             case String[] st -> st.length;
+            default -> 0;
+        };
+    }
+
+    @JsonIgnore
+    public double getDoubleValue(){
+        return switch (value) {
+            case int[] ig -> ig[0];
+            case double[] du -> du[0];
+            case byte[] by -> by[0];
+            case short[] sh -> sh[0];
+            case float[] fl -> fl[0];
             default -> 0;
         };
     }

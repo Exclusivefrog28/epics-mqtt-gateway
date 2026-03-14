@@ -150,6 +150,7 @@ public class Bridge {
      * Requests it over MQTT if that doesn't exist
      */
     public Uni<PVValue> getExternalCached(String protocol, String localName) {
+        if (topicMap.get(protocol) == null) return Uni.createFrom().failure(new IllegalArgumentException("Protocol not registered"));
         return pvCache.getCached(topicMap.get(protocol).get(localName));
     }
 

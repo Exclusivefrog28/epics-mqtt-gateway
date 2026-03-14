@@ -8,7 +8,6 @@ import io.quarkus.logging.Log;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.enterprise.context.Dependent;
-import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.net.InetSocketAddress;
