@@ -1,5 +1,6 @@
 package org.excf.epicsmqtt.gateway.bridge;
 
+import gov.aps.jca.Monitor;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.TimeoutException;
@@ -38,7 +39,7 @@ public class PVCache {
             sendGetRequest(t).subscribe().with(
                     unused -> {
                     },
-                    failure -> Log.errorf(failure, "Failied to send GET request to %s", t)
+                    failure -> Log.errorf(failure, "Failed to send GET request to %s", t)
             );
 
             return newFuture;
@@ -50,6 +51,19 @@ public class PVCache {
     }
 
     public void add(PV pv) {
+        PVValue oldValue = cache.get(pv.topic);
+        if (oldValue != null){
+            if (oldValue.value != pv.pvValue.value)
+                pv.pvValue.changeMask |= Monitor.VALUE;
+
+            if (oldValue.status != pv.pvValue.status || oldValue.severity != pv.pvValue.severity)
+                pv.pvValue.changeMask |= Monitor.ALARM;
+
+            if (oldValue.metadata != pv.pvValue.metadata)
+                pv.pvValue.changeMask |= Monitor.PROPERTY;
+        }else
+            pv.pvValue.changeMask = Monitor.VALUE | Monitor.ALARM | Monitor.PROPERTY;
+
         cache.put(pv.topic, pv.pvValue);
         CompletableFuture<PVValue> future = pending.remove(pv.topic);
 

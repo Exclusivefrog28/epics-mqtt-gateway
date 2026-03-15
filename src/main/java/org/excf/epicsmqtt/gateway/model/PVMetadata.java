@@ -2,6 +2,9 @@ package org.excf.epicsmqtt.gateway.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 public class PVMetadata {
     public String units = "";
     public String[] labels = new String[]{};
@@ -14,11 +17,11 @@ public class PVMetadata {
     public Number lowerWarningLimit = 0;
     public Number upperControlLimit = 0;
     public Number lowerControlLimit = 0;
-    
+
     @JsonIgnore
-    public PVMetadata units(String units){
+    public PVMetadata units(String units) {
         this.units = units;
-        return this;   
+        return this;
     }
 
     @JsonIgnore
@@ -79,6 +82,19 @@ public class PVMetadata {
     public PVMetadata lowerControlLimit(Number lowerControlLimit) {
         this.lowerControlLimit = lowerControlLimit;
         return this;
+    }
+
+    @JsonIgnore
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof PVMetadata that)) return false;
+        return Objects.equals(units, that.units) && Objects.deepEquals(labels, that.labels) && Objects.equals(precision, that.precision) && Objects.equals(upperDisplayLimit, that.upperDisplayLimit) && Objects.equals(lowerDisplayLimit, that.lowerDisplayLimit) && Objects.equals(upperAlarmLimit, that.upperAlarmLimit) && Objects.equals(lowerAlarmLimit, that.lowerAlarmLimit) && Objects.equals(upperWarningLimit, that.upperWarningLimit) && Objects.equals(lowerWarningLimit, that.lowerWarningLimit) && Objects.equals(upperControlLimit, that.upperControlLimit) && Objects.equals(lowerControlLimit, that.lowerControlLimit);
+    }
+
+    @JsonIgnore
+    @Override
+    public int hashCode() {
+        return Objects.hash(units, Arrays.hashCode(labels), precision, upperDisplayLimit, lowerDisplayLimit, upperAlarmLimit, lowerAlarmLimit, upperWarningLimit, lowerWarningLimit, upperControlLimit, lowerControlLimit);
     }
 
 }

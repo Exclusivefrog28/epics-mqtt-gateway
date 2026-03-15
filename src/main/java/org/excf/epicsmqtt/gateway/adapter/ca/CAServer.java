@@ -1,7 +1,6 @@
 package org.excf.epicsmqtt.gateway.adapter.ca;
 
 import gov.aps.jca.CAStatus;
-import gov.aps.jca.Monitor;
 import gov.aps.jca.cas.*;
 import gov.aps.jca.dbr.*;
 import io.quarkus.logging.Log;
@@ -77,9 +76,7 @@ public class CAServer implements Server {
             super.interestRegister();
             if (subscription == null)
                 subscription = adapter.addExternalMonitor(name)
-                        .onItem().transform(pvValue ->
-                                fillDBR(DBRType.forValue(pvValue.type).newInstance(pvValue.getCount()), pvValue))
-                        .onItem().invoke(dbr -> getEventCallback().postEvent(Monitor.VALUE, dbr))
+                        .onItem().invoke(pvValue -> getEventCallback().postEvent(pvValue.changeMask, fillDBR(DBRType.forValue(pvValue.type).newInstance(pvValue.getCount()), pvValue)))
                         .onFailure().recoverWithItem(th -> null)
                         .subscribe().with(
                                 unused -> {

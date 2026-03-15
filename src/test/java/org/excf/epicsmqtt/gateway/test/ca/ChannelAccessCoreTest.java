@@ -113,6 +113,7 @@ public class ChannelAccessCoreTest {
                 });
 
         bridge.removeHosted(channel.mqttTopic);
+        testClient.unsubscribe(channel.mqttTopic);
     }
 
     /**

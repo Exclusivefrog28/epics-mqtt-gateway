@@ -22,6 +22,9 @@ public class PVValue {
     public PVMetadata metadata = new PVMetadata();
 
     @JsonIgnore
+    public int changeMask = 0;
+
+    @JsonIgnore
     public PVValue(Object value, DBRType type, PVMetadata metadata) {
         this.value = value;
         this.type = type.getValue();
@@ -73,7 +76,7 @@ public class PVValue {
     }
 
     @JsonIgnore
-    public double getDoubleValue(){
+    public double getDoubleValue() {
         return switch (value) {
             case int[] ig -> ig[0];
             case double[] du -> du[0];

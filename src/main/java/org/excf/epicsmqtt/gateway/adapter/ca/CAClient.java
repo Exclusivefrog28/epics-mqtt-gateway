@@ -71,7 +71,7 @@ public class CAClient {
                         Multi.createFrom().emitter(emitter -> {
                             try {
                                 DBRType type = DBRType.forValue(channel.getFieldType().getValue() + 28);
-                                Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE,
+                                Monitor monitor = channel.addMonitor(type, channel.getElementCount(), Monitor.VALUE | Monitor.ALARM | Monitor.PROPERTY,
                                         ev -> {
                                             if (!emitter.isCancelled()) {
                                                 emitter.emit(ev.getDBR());

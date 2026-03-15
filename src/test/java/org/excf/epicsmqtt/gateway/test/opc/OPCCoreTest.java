@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,8 +60,6 @@ public class OPCCoreTest {
 
         bridge.registerHosted(channel);
 
-        //adapter.browseServer(NodeIds.ObjectsFolder, "");
-
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic);
         mqttAdapter.publishBoolean(channel.mqttTopic + "/GET", true).await().indefinitely();
 
@@ -90,17 +89,47 @@ public class OPCCoreTest {
     }
 
     @Test
+    public void testHostedChannelMonitor() throws Exception {
+
+        HostedChannel channel = new HostedChannel();
+        channel.alias = "test_alias";
+        channel.mqttTopic = "pv/opc-monitored";
+        channel.localNames = Map.of("opc", "ns=3;s=RandomUnsignedInt32");
+        channel.protocol = "opc";
+        channel.mode = Mode.READ_WRITE;
+
+        AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic);
+        HashSet<Integer> receivedValues = new HashSet<>();
+
+        bridge.registerHosted(channel);
+
+        mqttAdapter.publishBoolean(channel.mqttTopic + "/MONITOR", true).await().indefinitely();
+
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
+                () -> {
+                    byte[] lastMessage = lastMessageRef.get();
+                    Assertions.assertNotNull(lastMessage);
+                    int monitorValue = ((int[]) mapper.readValue(lastMessage, PV.class).pvValue.value)[0];
+                    receivedValues.add(monitorValue);
+                    Assertions.assertTrue(receivedValues.size() > 2);
+                });
+
+        bridge.removeHosted(channel.mqttTopic);
+        testClient.unsubscribe(channel.mqttTopic);
+    }
+
+    @Test
     public void testHostedAlarm() {
         HostedChannel channel = new HostedChannel();
         channel.alias = "temperature";
         channel.mqttTopic = "pv/opc-temperature";
-        channel.localNames = Map.of("opc", "detailedOpcItem");
+        channel.localNames = Map.of("opc", "temperature");
         channel.protocol = "opc";
         channel.mode = Mode.READ_WRITE;
 
         bridge.registerHosted(channel);
 
-        adapter.setOpcConfig(new OPCConfig().addItem("detailedOpcItem", new OPCConfig.OPCConfigEntry()
+        adapter.setOpcConfig(new OPCConfig().addItem("temperature", new OPCConfig.OPCConfigEntry()
                 .data("ns=4;i=6210")
                 .alarm(new OPCConfig.OPCAlarmConfig()
                         .hhsv("MAJOR_ALARM")

@@ -74,7 +74,17 @@ public class OPCAdapter extends Adapter {
 
     @Override
     public Multi<PVValue> monitorHosted(String name) {
-        return null;
+        if (opcConfig != null && opcConfig.containsKey(name)) {
+            OPCConfig.OPCConfigEntry config = opcConfig.get(name);
+            return opcClient.monitor(config.data)
+                    .map(this::convertDataValuetoPVValue)
+                    .map(pvValue -> fillAlarm(pvValue, config))
+                    .onFailure().invoke(e -> Log.warn("OPC monitor exception", e));
+        }
+
+        return opcClient.monitor(name)
+                .map(this::convertDataValuetoPVValue)
+                .onFailure().invoke(e -> Log.warn("OPC monitor exception", e));
     }
 
     @Override
