@@ -46,7 +46,7 @@ public class PVCache {
         });
 
         return Uni.createFrom().completionStage(future)
-                .ifNoItem().after(Duration.ofSeconds(10)).failWith(TimeoutException::new)
+                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new)
                 .onFailure(TimeoutException.class).invoke(unused -> pending.remove(topic, future));
     }
 

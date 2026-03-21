@@ -14,6 +14,7 @@ import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class OPCClient {
 
@@ -24,8 +25,8 @@ public class OPCClient {
     public OPCClient(OpcUaClient client) {
         this.client = client;
         try {
-            client.connect();
-        } catch (UaException e) {
+            client.connectAsync().get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
             Log.info("OPC client failed to connect");
             throw new RuntimeException(e);
         }
@@ -68,7 +69,7 @@ public class OPCClient {
                 try {
                     subscription.synchronizeMonitoredItems();
                 } catch (MonitoredItemSynchronizationException e) {
-                   Log.warnf(e, "Couldn't remove OPC monitoredItem for %s", nodeId);
+                    Log.warnf(e, "Couldn't remove OPC monitoredItem for %s", nodeId);
                 }
             });
         });

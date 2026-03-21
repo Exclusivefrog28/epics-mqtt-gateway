@@ -1,24 +1,35 @@
 package org.excf.epicsmqtt.gateway.test.opc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import gov.aps.jca.dbr.DBRType;
 import gov.aps.jca.dbr.Severity;
 import gov.aps.jca.dbr.Status;
+import io.quarkus.logging.Log;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
+import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
+import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
+import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
 import org.excf.epicsmqtt.gateway.adapter.opc.OPCAdapter;
+import org.excf.epicsmqtt.gateway.adapter.opc.OPCClient;
 import org.excf.epicsmqtt.gateway.adapter.opc.config.OPCConfig;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
+import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.config.Mode;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVMetadata;
+import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
 import org.excf.epicsmqtt.gateway.test.TestClient;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
@@ -158,5 +169,49 @@ public class OPCCoreTest {
 
         bridge.removeHosted(channel.mqttTopic);
         testClient.unsubscribe(channel.mqttTopic);
+    }
+
+    @Test
+    public void testExternalChannelGet() throws Exception {
+        OPCClient opcClient = new OPCClient(OpcUaClient.create("opc.tcp://localhost:50001",
+                endpoints -> endpoints.stream()
+                        .filter(e -> SecurityPolicy.None.getUri().equals(e.getSecurityPolicyUri()))
+                        .findFirst(),
+                transportConfig -> {
+                },
+                clientConfig ->
+                        clientConfig
+                                .setApplicationName(LocalizedText.english("EPICS MQTT GateWay OPC Test Client"))
+                                .setApplicationUri("org:excf:epics:opc:test:client")
+        ));
+
+
+        ExternalChannel channel = new ExternalChannel();
+        channel.alias = "test_alias";
+        channel.mqttTopic = "pv/external_opc";
+        channel.localNames = Map.of("opc", "ns=2;s=RemoteOPCNode");
+        channel.mode = Mode.READ_ONLY;
+
+        bridge.registerExternal(channel);
+        PVValue pvValue = new PVValue();
+        pvValue.setDBRType(DBRType.DOUBLE);
+        pvValue.value = new double[]{new Random().nextDouble(0, 100)};
+        pvValue.timestamp = Instant.now();
+
+        testClient.addPV(channel.mqttTopic, new PV(channel.localNames, pvValue));
+
+        await().atMost(5, SECONDS).ignoreExceptions().untilAsserted(
+                () -> {
+                    DataValue dataValue = opcClient.get("ns=2;s=RemoteOPCNode")
+                            .onFailure().invoke(e -> Log.warn("OPC test client exception", e))
+                            .await().atMost(Duration.ofSeconds(1));
+                    Object value = dataValue.getValue().getValue();
+                    Assertions.assertNotNull(value);
+                    Assertions.assertEquals(((double[]) pvValue.value)[0], (double) value, 0.001);
+                });
+
+        bridge.removeExternal(channel.mqttTopic);
+        testClient.removePV(channel.mqttTopic);
+        opcClient.clear();
     }
 }

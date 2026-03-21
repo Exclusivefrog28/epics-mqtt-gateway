@@ -40,6 +40,7 @@ import java.util.Optional;
 @Named("opc")
 public class OPCAdapter extends Adapter {
     private OPCClient opcClient;
+    private OPCServer opcServer;
     private Map<String, OPCConfig.OPCConfigEntry> opcConfig;
 
     @Inject
@@ -124,17 +125,19 @@ public class OPCAdapter extends Adapter {
                     },
                     clientConfig ->
                             clientConfig
-                                    .setApplicationName(LocalizedText.english("EPICS MQTT Gateway"))
-                                    .setApplicationUri("org:excf:epics")
+                                    .setApplicationName(LocalizedText.english("EPICS MQTT GateWay OPC Client"))
+                                    .setApplicationUri("org:excf:epics:opc:client")
             ));
 
+        opcServer = new OPCServer(this);
     }
 
     void shutDown(@Observes ShutdownEvent ev) {
         if (opcClient != null) opcClient.clear();
+        if (opcServer != null) opcServer.clear();
     }
 
-    private PVValue convertDataValuetoPVValue(DataValue dataValue) {
+    PVValue convertDataValuetoPVValue(DataValue dataValue) {
         Variant variant = dataValue.getValue();
         Object opcValue = variant.getValue();
 
@@ -218,7 +221,7 @@ public class OPCAdapter extends Adapter {
         return pvValue;
     }
 
-    private DataValue fillDataValue(DataValue dataValue, PVValue pvValue) {
+    DataValue fillDataValue(DataValue dataValue, PVValue pvValue) {
         Object currentValue = dataValue.getValue().getValue();
         if (currentValue == null) throw new IllegalArgumentException("OPC value is null");
 
@@ -241,7 +244,7 @@ public class OPCAdapter extends Adapter {
         return DataValue.valueOnly(variant);
     }
 
-    private PVValue fillAlarm(PVValue pvValue, OPCConfig.OPCConfigEntry config) {
+    PVValue fillAlarm(PVValue pvValue, OPCConfig.OPCConfigEntry config) {
         if (config == null) return pvValue;
         pvValue.metadata = config.meta;
         if (config.alarm == null) return pvValue;
