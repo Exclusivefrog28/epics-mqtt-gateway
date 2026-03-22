@@ -21,6 +21,7 @@ import org.eclipse.milo.opcua.stack.core.types.enumerated.MessageSecurityMode;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.NodeClass;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.TimestampsToReturn;
 import org.eclipse.milo.opcua.stack.core.types.structured.ReadValueId;
+import org.eclipse.milo.opcua.stack.core.types.structured.WriteValue;
 import org.eclipse.milo.opcua.stack.transport.server.tcp.OpcTcpServerTransport;
 import org.eclipse.milo.opcua.stack.transport.server.tcp.OpcTcpServerTransportConfig;
 import org.excf.epicsmqtt.gateway.model.PVValue;
@@ -73,7 +74,7 @@ public class OPCServer {
             }
         });
 
-        server.startup();
+        opcServerThread.start();
     }
 
 
@@ -107,7 +108,7 @@ public class OPCServer {
                                 else if (attributeId.equals(AttributeId.DataType.uid()))
                                     return Uni.createFrom().item(new DataValue(new Variant(OPCServer.opcType(pvValue.value)), StatusCode.GOOD));
                                 else if (attributeId.equals(AttributeId.AccessLevel.uid()) || attributeId.equals(AttributeId.UserAccessLevel.uid()))
-                                    return Uni.createFrom().item(new DataValue(new Variant(Unsigned.ubyte(1)), StatusCode.GOOD));
+                                    return Uni.createFrom().item(new DataValue(new Variant(Unsigned.ubyte(3)), StatusCode.GOOD));
                                 else if (attributeId.equals(AttributeId.ValueRank.uid()))
                                     return Uni.createFrom().item(new DataValue(new Variant(pvValue.getCount() == 1 ? -1 : 1), StatusCode.GOOD));
                                 else if (attributeId.equals(AttributeId.ArrayDimensions.uid()))
@@ -119,6 +120,20 @@ public class OPCServer {
                             }))
                     .onFailure().recoverWithItem(failure -> new DataValue(new StatusCode(StatusCodes.Bad_NodeIdUnknown)))
                     .collect().asList()
+                    .await().indefinitely();
+        }
+
+        @Override
+        public List<StatusCode> write(WriteContext context, List<WriteValue> writeValues) {
+            return Multi.createFrom().iterable(writeValues)
+                    .onItem().transformToUniAndConcatenate(wv ->{
+                            if(!wv.getAttributeId().equals(AttributeId.Value.uid())) return Uni.createFrom().item(StatusCode.BAD);
+
+                            return adapter.putExternal(wv.getNodeId().toParseableString(), adapter.convertDataValuetoPVValue(wv.getValue()))
+                                    .map(v -> StatusCode.GOOD)
+                                    .onFailure().recoverWithItem(StatusCode.BAD);
+                            }
+                    ).collect().asList()
                     .await().indefinitely();
         }
 
@@ -173,6 +188,7 @@ public class OPCServer {
         if (opcServerThread != null) {
             try {
                 opcServerThread.interrupt();
+                opcServerThread.join();
             } catch (Exception e) {
                 Log.warn("OPC server didn't shut down gracefully", e);
             }

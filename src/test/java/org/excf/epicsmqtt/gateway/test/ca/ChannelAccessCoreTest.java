@@ -159,7 +159,7 @@ public class ChannelAccessCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_double";
         channel.localNames = Map.of("ca", "remote:pv");
-        channel.mode = Mode.READ_ONLY;
+        channel.mode = Mode.READ_WRITE;
 
         bridge.registerExternal(channel);
 
