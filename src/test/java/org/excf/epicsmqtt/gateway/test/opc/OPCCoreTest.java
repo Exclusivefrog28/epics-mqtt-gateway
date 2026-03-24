@@ -7,6 +7,7 @@ import gov.aps.jca.dbr.Status;
 import io.quarkus.logging.Log;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.helpers.test.AssertSubscriber;
 import jakarta.inject.Inject;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
@@ -35,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -241,6 +243,55 @@ public class OPCCoreTest {
         bridge.removeExternal(channel.mqttTopic);
         testClient.removePV(channel.mqttTopic);
         testClient.unsubscribe(channel.mqttTopic + "/PUT");
+        opcClient.clear();
+    }
+
+    @Test
+    public void testExternalChannelMonitor() throws Exception {
+        OPCClient opcClient = new TestOpcClient();
+
+        ExternalChannel channel = new ExternalChannel();
+        channel.alias = "test_alias";
+        channel.mqttTopic = "pv/external_monitored_opc";
+        channel.localNames = Map.of("opc", "ns=2;s=RemoteMonitoredOPCNode");
+        channel.mode = Mode.READ_ONLY;
+
+        bridge.registerExternal(channel);
+
+        PVValue pvValue = new PVValue();
+        pvValue.setDBRType(DBRType.DOUBLE);
+        pvValue.value = new double[]{0};
+        pvValue.timestamp = Instant.now();
+
+        testClient.addPV(channel.mqttTopic, new PV(channel.localNames, pvValue));
+
+        AssertSubscriber<Double> subscriber =
+                opcClient.monitor("ns=2;s=RemoteMonitoredOPCNode")
+                        .onFailure().invoke(e -> Log.warn("OPC test client exception", e))
+                        .onItem().transform(dataValue -> dataValue.getValue().getValue())
+                        .filter(Objects::nonNull)
+                        .map(value -> (double) value)
+                        .filter(value -> value != 0.0)
+                        .skip().repetitions()
+                        .subscribe().withSubscriber(AssertSubscriber.create(2));
+
+        double[] testValue1 = new double[]{new Random().nextDouble(1, 100)};
+        pvValue.value = testValue1;
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true)
+                .onItem().delayIt().by(Duration.ofSeconds(1)).await().indefinitely();
+
+        double[] testValue2 = new double[]{new Random().nextDouble(1, 100)};
+        pvValue.value = testValue2;
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true).await().indefinitely();
+
+        subscriber
+                .awaitItems(2)
+                .assertItems(testValue1[0], testValue2[0])
+                .assertNotTerminated();
+
+        subscriber.cancel();
+        bridge.removeExternal(channel.mqttTopic);
+        testClient.removePV(channel.mqttTopic);
         opcClient.clear();
     }
 }

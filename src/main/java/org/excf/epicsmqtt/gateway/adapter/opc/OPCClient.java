@@ -3,10 +3,10 @@ package org.excf.epicsmqtt.gateway.adapter.opc;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.smallrye.mutiny.unchecked.Unchecked;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.sdk.client.nodes.UaVariableNode;
-import org.eclipse.milo.opcua.sdk.client.subscriptions.MonitoredItemSynchronizationException;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaMonitoredItem;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaSubscription;
 import org.eclipse.milo.opcua.stack.core.UaException;
@@ -42,34 +42,38 @@ public class OPCClient {
     }
 
     public Multi<DataValue> monitor(String nodeId) {
-        if (subscription == null) {
-            try {
-                (subscription = new OpcUaSubscription(client)).create();
-            } catch (UaException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        OpcUaMonitoredItem monitoredItem = OpcUaMonitoredItem.newDataItem(NodeId.parse(nodeId));
-
         return Multi.createFrom().emitter(emitter -> {
-            monitoredItem.setDataValueListener((item, value) -> {
-                emitter.emit(value);
-            });
-
-            subscription.addMonitoredItem(monitoredItem);
-            try {
-                subscription.synchronizeMonitoredItems();
-            } catch (MonitoredItemSynchronizationException e) {
-                emitter.fail(e);
-            }
-
-            emitter.onTermination(() -> {
-                subscription.removeMonitoredItem(monitoredItem);
+            Infrastructure.getDefaultWorkerPool().execute(() -> {
                 try {
+                    if (subscription == null) {
+                        synchronized (this) {
+                            if (subscription == null) {
+                                (subscription = new OpcUaSubscription(client)).create(); // Blocking
+                            }
+                        }
+                    }
+
+                    OpcUaMonitoredItem monitoredItem = OpcUaMonitoredItem.newDataItem(NodeId.parse(nodeId));
+                    monitoredItem.setDataValueListener((item, value) -> emitter.emit(value));
+
+                    subscription.addMonitoredItem(monitoredItem);
+
                     subscription.synchronizeMonitoredItems();
-                } catch (MonitoredItemSynchronizationException e) {
-                    Log.warnf(e, "Couldn't remove OPC monitoredItem for %s", nodeId);
+
+                    emitter.onTermination(() -> {
+
+                        Infrastructure.getDefaultWorkerPool().execute(() -> {
+                            try {
+                                subscription.removeMonitoredItem(monitoredItem);
+                                subscription.synchronizeMonitoredItems(); // Blocking
+                            } catch (Exception e) {
+                                Log.warnf(e, "Couldn't remove OPC monitoredItem for %s", nodeId);
+                            }
+                        });
+                    });
+
+                } catch (Exception e) {
+                    emitter.fail(e);
                 }
             });
         });

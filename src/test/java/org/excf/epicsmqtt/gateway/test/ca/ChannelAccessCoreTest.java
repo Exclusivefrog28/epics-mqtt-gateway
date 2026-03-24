@@ -215,7 +215,8 @@ public class ChannelAccessCoreTest {
 
         double[] testValue1 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue1;
-        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true).await().indefinitely();
+        mqttAdapter.publishPV(channel.mqttTopic, new PV(channel.localNames, pvValue, true), true)
+                .onItem().delayIt().by(Duration.ofSeconds(1)).await().indefinitely();
 
         double[] testValue2 = new double[]{new Random().nextDouble(1, 100)};
         pvValue.value = testValue2;

@@ -3,6 +3,7 @@ package org.excf.epicsmqtt.gateway.adapter.opc;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.subscription.Cancellable;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.milo.opcua.sdk.server.EndpointConfig;
 import org.eclipse.milo.opcua.sdk.server.ManagedNamespaceWithLifecycle;
@@ -10,11 +11,13 @@ import org.eclipse.milo.opcua.sdk.server.OpcUaServer;
 import org.eclipse.milo.opcua.sdk.server.OpcUaServerConfig;
 import org.eclipse.milo.opcua.sdk.server.items.DataItem;
 import org.eclipse.milo.opcua.sdk.server.items.MonitoredItem;
+import org.eclipse.milo.opcua.sdk.server.nodes.UaVariableNode;
 import org.eclipse.milo.opcua.stack.core.AttributeId;
 import org.eclipse.milo.opcua.stack.core.NodeIds;
 import org.eclipse.milo.opcua.stack.core.StatusCodes;
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
 import org.eclipse.milo.opcua.stack.core.types.builtin.*;
+import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UByte;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.Unsigned;
 import org.eclipse.milo.opcua.stack.core.types.enumerated.MessageSecurityMode;
@@ -27,8 +30,11 @@ import org.eclipse.milo.opcua.stack.transport.server.tcp.OpcTcpServerTransportCo
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 
 public class OPCServer {
@@ -81,6 +87,7 @@ public class OPCServer {
     static class CustomNameSpace extends ManagedNamespaceWithLifecycle {
 
         OPCAdapter adapter;
+        private final Map<UInteger, Cancellable> activeSubscriptions = new ConcurrentHashMap<>();
 
         public CustomNameSpace(OpcUaServer server, String namespaceUri, OPCAdapter adapter) {
             super(server, namespaceUri);
@@ -95,10 +102,23 @@ public class OPCServer {
                                 NodeId nodeId = readValueId.getNodeId();
                                 UInteger attributeId = readValueId.getAttributeId();
 
+                                if (!getNodeManager().containsNode(nodeId))
+                                    getNodeManager().addNode(UaVariableNode.build(this.getNodeContext(),
+                                            builder -> builder
+                                                    .setNodeId(nodeId)
+                                                    .setBrowseName(new QualifiedName(nodeId.getNamespaceIndex(), (String) nodeId.getIdentifier()))
+                                                    .setDisplayName(LocalizedText.english((String) nodeId.getIdentifier()))
+                                                    .setDataType(OPCServer.opcType(pvValue.value))
+                                                    .setTypeDefinition(NodeIds.BaseDataVariableType)
+                                                    .setAccessLevel(UByte.valueOf(3))
+                                                    .setUserAccessLevel(UByte.valueOf(3))
+                                                    .setValue(new DataValue(new Variant(0.0)))
+                                                    .build()));
+
                                 if (attributeId.equals(AttributeId.Value.uid()))
                                     return adapter.getExternal(nodeId.toParseableString()).map(OPCServer::toDataValue);
                                 else if (attributeId.equals(AttributeId.NodeClass.uid()))
-                                    return Uni.createFrom().item(new DataValue(new Variant(NodeClass.Variable.getValue()), StatusCode.GOOD));
+                                    return Uni.createFrom().item(new DataValue(new Variant(NodeClass.Variable), StatusCode.GOOD));
                                 else if (attributeId.equals(AttributeId.NodeId.uid()))
                                     return Uni.createFrom().item(new DataValue(new Variant(nodeId), StatusCode.GOOD));
                                 else if (attributeId.equals(AttributeId.BrowseName.uid()))
@@ -126,12 +146,12 @@ public class OPCServer {
         @Override
         public List<StatusCode> write(WriteContext context, List<WriteValue> writeValues) {
             return Multi.createFrom().iterable(writeValues)
-                    .onItem().transformToUniAndConcatenate(wv ->{
-                            if(!wv.getAttributeId().equals(AttributeId.Value.uid())) return Uni.createFrom().item(StatusCode.BAD);
+                    .onItem().transformToUniAndConcatenate(wv -> {
+                                if (!wv.getAttributeId().equals(AttributeId.Value.uid())) return Uni.createFrom().item(StatusCode.BAD);
 
-                            return adapter.putExternal(wv.getNodeId().toParseableString(), adapter.convertDataValuetoPVValue(wv.getValue()))
-                                    .map(v -> StatusCode.GOOD)
-                                    .onFailure().recoverWithItem(StatusCode.BAD);
+                                return adapter.putExternal(wv.getNodeId().toParseableString(), adapter.convertDataValuetoPVValue(wv.getValue()))
+                                        .map(v -> StatusCode.GOOD)
+                                        .onFailure().recoverWithItem(StatusCode.BAD);
                             }
                     ).collect().asList()
                     .await().indefinitely();
@@ -139,7 +159,20 @@ public class OPCServer {
 
         @Override
         public void onDataItemsCreated(List<DataItem> list) {
-
+            for (DataItem dataItem : list) {
+                if (Objects.equals(dataItem.getReadValueId().getAttributeId(), AttributeId.Value.uid())) {
+                    activeSubscriptions.put(dataItem.getId(),
+                            adapter.addExternalMonitor(dataItem.getReadValueId().getNodeId().toParseableString())
+                                    .map(OPCServer::toDataValue)
+                                    .onItem().invoke(dataItem::setValue)
+                                    .subscribe().with(
+                                            unused -> {
+                                            },
+                                            failure -> dataItem.setValue(new DataValue(new StatusCode(StatusCodes.Bad_InternalError)))
+                                    )
+                    );
+                }
+            }
         }
 
         @Override
@@ -149,7 +182,10 @@ public class OPCServer {
 
         @Override
         public void onDataItemsDeleted(List<DataItem> list) {
-
+            for (DataItem dataItem : list) {
+                Cancellable subscription = activeSubscriptions.remove(dataItem.getId());
+                if (subscription != null) subscription.cancel();
+            }
         }
 
         @Override

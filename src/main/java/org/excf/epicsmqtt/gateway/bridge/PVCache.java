@@ -6,6 +6,8 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.TimeoutException;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.operators.multi.processors.BroadcastProcessor;
+import io.smallrye.mutiny.subscription.BackPressureStrategy;
+import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.excf.epicsmqtt.gateway.model.PV;
@@ -21,7 +23,9 @@ import java.util.concurrent.ConcurrentMap;
 public class PVCache {
     private final ConcurrentMap<String, PVValue> cache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CompletableFuture<PVValue>> pending = new ConcurrentHashMap<>();
-    private final BroadcastProcessor<PV> eventBus = BroadcastProcessor.create();
+
+    private MultiEmitter<PV> globalEmitter;
+    private final Multi<PV> hotStream;
 
     @Inject
     MQTTAdapter mqtt;
@@ -70,13 +74,20 @@ public class PVCache {
         if (future != null)
             future.complete(pv.pvValue);
 
-        eventBus.onNext(pv);
+        globalEmitter.emit(pv);
     }
 
     public Multi<PVValue> monitor(String topic) {
-        return eventBus.toHotStream()
+        return hotStream
                 .filter(pv -> pv.topic.equals(topic))
                 .map(pv -> pv.pvValue);
+    }
+
+    public PVCache() {
+        hotStream = Multi.createFrom().<PV>emitter(
+                emitter -> globalEmitter = (MultiEmitter<PV>) emitter,
+                BackPressureStrategy.BUFFER
+        ).broadcast().toAllSubscribers();
     }
 
     public void clear() {
