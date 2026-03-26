@@ -60,17 +60,14 @@ public class OPCClient {
 
                     subscription.synchronizeMonitoredItems();
 
-                    emitter.onTermination(() -> {
-
-                        Infrastructure.getDefaultWorkerPool().execute(() -> {
-                            try {
-                                subscription.removeMonitoredItem(monitoredItem);
-                                subscription.synchronizeMonitoredItems(); // Blocking
-                            } catch (Exception e) {
-                                Log.warnf(e, "Couldn't remove OPC monitoredItem for %s", nodeId);
-                            }
-                        });
-                    });
+                    emitter.onTermination(() -> Infrastructure.getDefaultWorkerPool().execute(() -> {
+                        try {
+                            subscription.removeMonitoredItem(monitoredItem);
+                            subscription.synchronizeMonitoredItems(); // Blocking
+                        } catch (Exception e) {
+                            // Ignore, as the subscription is already closed, there is no need to remove the monitored item
+                        }
+                    }));
 
                 } catch (Exception e) {
                     emitter.fail(e);
@@ -95,6 +92,7 @@ public class OPCClient {
         if (client != null) {
             try {
                 if (subscription != null) {
+                    Log.info("OPC client shutting down");
                     subscription.delete();
                     subscription = null;
                 }
