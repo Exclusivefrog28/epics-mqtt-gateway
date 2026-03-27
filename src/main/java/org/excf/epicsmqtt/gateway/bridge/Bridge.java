@@ -32,8 +32,6 @@ public class Bridge {
 
     // map topics to adapters
     protected Map<String, Adapter> adapters = new HashMap<>();
-
-
     // map protocols and local names to topics
     protected ConcurrentMap<String, Map<String, String>> topicMap = new ConcurrentHashMap<>();
 
@@ -58,7 +56,7 @@ public class Bridge {
             addMonitor(channel, adapter);
         else
             channelSubs.add(
-                    mqttAdapter.subscribe(channel.mqttTopic + "/MONITOR", request ->
+                    mqttAdapter.subscribeAndConcatenate(channel.mqttTopic + "/MONITOR", request ->
                             mqttAdapter.parseBooleanMessage(request)
                                     .invoke(shouldMonitor -> {
                                         if (shouldMonitor) addMonitor(channel, adapter);
@@ -67,7 +65,7 @@ public class Bridge {
             );
 
         channelSubs.add(
-                mqttAdapter.subscribe(channel.mqttTopic + "/GET", request ->
+                mqttAdapter.subscribeAndConcatenate(channel.mqttTopic + "/GET", request ->
                         adapter.getHosted(channel.getSourceName())
                                 .onItem().transform(pvValue -> new PV(channel.localNames, pvValue))
                                 .chain((pv) -> this.update(channel.mqttTopic, pv))
@@ -75,7 +73,7 @@ public class Bridge {
         );
 
         channelSubs.add(
-                mqttAdapter.subscribe(channel.mqttTopic + "/PUT", request ->
+                mqttAdapter.subscribeAndConcatenate(channel.mqttTopic + "/PUT", request ->
                         mqttAdapter.parseMessage(request)
                                 .chain((pv) -> adapter.putHosted(channel.getSourceName(), pv.pvValue))
                                 .chain(unused -> adapter.getHosted(channel.getSourceName()))
@@ -106,7 +104,7 @@ public class Bridge {
             );
 
         subscriptions.put(channel.mqttTopic, List.of(
-                mqttAdapter.subscribe(channel.mqttTopic, message ->
+                mqttAdapter.subscribeAndConcatenate(channel.mqttTopic, message ->
                         mqttAdapter.parseMessage(message).chain(this::handleExternal)
                 )
         ));
@@ -125,7 +123,8 @@ public class Bridge {
                 registerHosted(hostedChannel);
 
         // noLocal subscription should prevent hosted channels from receiving their own updates
-        mqttAdapter.subscribe("pv/+", message ->
+        // messages can be processed in parallel as they can be from different topics -> merge the multi stream
+        mqttAdapter.subscribeAndMerge("pv/+", message ->
                 mqttAdapter.parseMessage(message).chain(this::handleExternal)
         );
     }

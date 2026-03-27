@@ -39,6 +39,9 @@ public class MqttService {
     @ConfigProperty(name = "mqtt.client-id")
     String clientId;
 
+    @ConfigProperty(name = "mqtt.subscriptions.nolocal", defaultValue = "true")
+    Boolean noLocal;
+
     private Mqtt5RxClient client;
 
     @PostConstruct
@@ -76,6 +79,7 @@ public class MqttService {
         Mqtt5Subscribe subscribeMessage = Mqtt5Subscribe.builder()
                 .topicFilter(topicFilter)
                 .qos(MqttQos.AT_LEAST_ONCE)
+                .noLocal(noLocal)
                 .build();
 
         return Multi.createFrom().publisher(

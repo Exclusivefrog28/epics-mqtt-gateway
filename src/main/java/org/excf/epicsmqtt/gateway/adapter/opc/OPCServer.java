@@ -38,13 +38,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 
 public class OPCServer {
-    private final OPCAdapter adapter;
 
     private final Thread opcServerThread;
 
     public OPCServer(OPCAdapter adapter) {
-        this.adapter = adapter;
-
         int port = ConfigProvider.getConfig().getOptionalValue("opc.server.port", Integer.class).orElse(50000);
         OpcUaServerConfig config = OpcUaServerConfig.builder()
                 .setExecutor(Executors.newVirtualThreadPerTaskExecutor())

@@ -22,7 +22,7 @@ public class TestClient {
 
     public void addPV(String topic, PV pv) {
         subscriptions.put(topic + "/GET",
-                mqttAdapter.subscribe(topic + "/GET",
+                mqttAdapter.subscribeAndMerge(topic + "/GET",
                         (unused) -> mqttAdapter.publishPV(topic, pv, true)
                 )
         );
@@ -37,7 +37,7 @@ public class TestClient {
         AtomicReference<byte[]> lastMessage = new AtomicReference<>(null);
 
         subscriptions.put(topic,
-                mqttAdapter.subscribe(topic,
+                mqttAdapter.subscribeAndConcatenate(topic,
                         (message) -> Uni.createFrom().item(message)
                                 .onItem().invoke(m -> lastMessage.set(m.getPayloadAsBytes())
                                 )

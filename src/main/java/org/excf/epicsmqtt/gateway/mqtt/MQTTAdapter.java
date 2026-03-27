@@ -38,7 +38,16 @@ public class MQTTAdapter {
         }
     }
 
-    public <O> Cancellable subscribe(String topic, Function<MQTTMessage, Uni<? extends O>> uniMapper) {
+    public <O> Cancellable subscribeAndMerge(String topic, Function<MQTTMessage, Uni<? extends O>> uniMapper) {
+        return mqttService.subscribe(topic)
+                .onItem().transformToUniAndConcatenate(message ->
+                        uniMapper.apply(message).onFailure().recoverWithNull()
+                )
+                .subscribe().with(unused -> {
+                }, e -> Log.error("MQTT stream error", e));
+    }
+
+    public <O> Cancellable subscribeAndConcatenate(String topic, Function<MQTTMessage, Uni<? extends O>> uniMapper) {
         return mqttService.subscribe(topic)
                 .onItem().transformToUniAndConcatenate(message ->
                         uniMapper.apply(message).onFailure().recoverWithNull()
