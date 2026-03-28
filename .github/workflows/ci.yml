@@ -1,7 +1,7 @@
 name: ci.yml
 on:
   push:
-    branches: [ "main", "cicd"]
+    branches: [ "main" ]
 
 jobs:
   build-and-test:
