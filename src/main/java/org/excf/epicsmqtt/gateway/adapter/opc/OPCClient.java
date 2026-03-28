@@ -20,7 +20,7 @@ public class OPCClient {
 
     OpcUaClient client;
 
-    private OpcUaSubscription subscription;
+    private volatile OpcUaSubscription subscription;
 
     public OPCClient(OpcUaClient client) {
         this.client = client;
