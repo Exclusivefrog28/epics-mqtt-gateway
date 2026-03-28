@@ -20,9 +20,9 @@ jobs:
 
       - name: Build and Run Tests
         env:
-          MQTT_HOST: ${{ secrets.MQTT_HOST }}
-          MQTT_PORT: ${{ secrets.MQTT_PORT }}
-          OIDC_AUTH_URL: ${{ secrets.OIDC_AUTH_URL }}
+          MQTT_HOST: ${{ vars.MQTT_HOST }}
+          MQTT_PORT: ${{ vars.MQTT_PORT }}
+          OIDC_AUTH_URL: ${{ vars.OIDC_AUTH_URL }}
           OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
           OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
 
