@@ -1,0 +1,23 @@
+name: ci.yml
+on:
+  push:
+    branches: [ "main", "cicd"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (or 21, depending on your setup)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and Run Tests
+
+        run: ./mvnw clean verify
