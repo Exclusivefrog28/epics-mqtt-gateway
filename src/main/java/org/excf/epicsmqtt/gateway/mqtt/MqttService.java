@@ -6,14 +6,18 @@ import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5RxClient;
 import com.hivemq.client.mqtt.mqtt5.message.connect.Mqtt5Connect;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishResult;
+import com.hivemq.client.mqtt.mqtt5.message.publish.puback.Mqtt5PubAckReasonCode;
 import com.hivemq.client.mqtt.mqtt5.message.subscribe.Mqtt5Subscribe;
 import io.quarkus.logging.Log;
 import io.quarkus.oidc.client.OidcClient;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
+import io.quarkus.security.UnauthorizedException;
 import io.reactivex.Flowable;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.unchecked.Unchecked;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -116,6 +120,15 @@ public class MqttService {
                 .onFailure().retry()
                 .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(2))
                 .atMost(10)
+                .onItem().transform(Unchecked.function(result -> {
+                    if (result instanceof Mqtt5PublishResult.Mqtt5Qos1Result qos1Result){
+                        if (qos1Result.getPubAck().getReasonCode() == Mqtt5PubAckReasonCode.NOT_AUTHORIZED)
+                            throw new UnauthorizedException("MQTT publish failed, publishing to %s is not authorized".formatted(topic));
+                        return qos1Result;
+                    }
+                    return result;
+                }))
+                .onItem().invoke(result -> Log.info(((Mqtt5PublishResult.Mqtt5Qos1Result) result).getPubAck().getReasonCode()))
                 .replaceWithVoid();
     }
 
