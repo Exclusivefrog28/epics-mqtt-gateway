@@ -118,7 +118,7 @@ public class MqttService {
                 })
                 .onFailure().invoke(th -> Log.warn("MQTT publish failed, retrying..."))
                 .onFailure().retry()
-                .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(2))
+                .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(10))
                 .atMost(10)
                 .onItem().transform(Unchecked.function(result -> {
                     if (result instanceof Mqtt5PublishResult.Mqtt5Qos1Result qos1Result){
@@ -135,7 +135,7 @@ public class MqttService {
     private Uni<Void> tokenRefreshLoop() {
         return oidcClient.getTokens()
                 .onFailure().retry()
-                .withBackOff(Duration.ofSeconds(2), Duration.ofSeconds(15))
+                .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(10))
                 .atMost(5)
                 .chain(tokens -> {
                     Log.info("Token acquired");
@@ -155,12 +155,15 @@ public class MqttService {
                 });
     }
 
+    @ConfigProperty(name = "mqtt.session.expiry.interval", defaultValue = "3600")
+    int sessionExpiryInterval;
+
     private Uni<Void> reconnectMqttClient(String accessToken) {
         return Uni.createFrom().deferred(() -> {
 
                     Mqtt5Connect connectMsg = Mqtt5Connect.builder()
                             .cleanStart(false)
-                            .sessionExpiryInterval(3600)
+                            .sessionExpiryInterval(sessionExpiryInterval)
                             .simpleAuth()
                             .username(clientId)
                             .password(accessToken.getBytes(StandardCharsets.UTF_8))

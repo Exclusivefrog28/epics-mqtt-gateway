@@ -6,5 +6,5 @@ public class ExternalChannel {
     public String alias;
     public String mqttTopic;
     public Map<String, String> localNames;
-    public Mode mode;
+    public Access access;
 }

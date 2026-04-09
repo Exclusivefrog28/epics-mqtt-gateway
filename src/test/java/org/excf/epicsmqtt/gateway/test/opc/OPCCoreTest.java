@@ -9,25 +9,20 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.helpers.test.AssertSubscriber;
 import jakarta.inject.Inject;
-import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
-import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
-import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
 import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
-import org.excf.epicsmqtt.gateway.adapter.ca.CAClient;
 import org.excf.epicsmqtt.gateway.adapter.opc.OPCAdapter;
 import org.excf.epicsmqtt.gateway.adapter.opc.OPCClient;
 import org.excf.epicsmqtt.gateway.adapter.opc.config.OPCConfig;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
-import org.excf.epicsmqtt.gateway.config.Mode;
+import org.excf.epicsmqtt.gateway.config.Access;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVMetadata;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
 import org.excf.epicsmqtt.gateway.test.TestClient;
-import org.excf.epicsmqtt.gateway.test.ca.ChannelAccessTestContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -72,7 +67,7 @@ public class OPCCoreTest {
         channel.mqttTopic = "pv/opc-hosted";
         channel.localNames = Map.of("opc", "ns=4;i=6217");
         channel.protocol = "opc";
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         bridge.registerHosted(channel);
 
@@ -112,7 +107,7 @@ public class OPCCoreTest {
         channel.mqttTopic = "pv/opc-monitored";
         channel.localNames = Map.of("opc", "ns=3;s=RandomUnsignedInt32");
         channel.protocol = "opc";
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic);
         HashSet<Integer> receivedValues = new HashSet<>();
@@ -141,7 +136,7 @@ public class OPCCoreTest {
         channel.mqttTopic = "pv/opc-temperature";
         channel.localNames = Map.of("opc", "temperature");
         channel.protocol = "opc";
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         bridge.registerHosted(channel);
 
@@ -184,7 +179,7 @@ public class OPCCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_opc";
         channel.localNames = Map.of("opc", "ns=2;s=RemoteOPCNode");
-        channel.mode = Mode.READ_ONLY;
+        channel.access = Access.READ_ONLY;
 
         bridge.registerExternal(channel);
         PVValue pvValue = new PVValue();
@@ -217,7 +212,7 @@ public class OPCCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_opc";
         channel.localNames = Map.of("opc", "ns=2;s=RemoteOPCNode");
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         bridge.registerExternal(channel);
 
@@ -254,7 +249,7 @@ public class OPCCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_monitored_opc";
         channel.localNames = Map.of("opc", "ns=2;s=RemoteMonitoredOPCNode");
-        channel.mode = Mode.READ_ONLY;
+        channel.access = Access.READ_ONLY;
 
         bridge.registerExternal(channel);
 

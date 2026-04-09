@@ -10,6 +10,7 @@ import io.smallrye.mutiny.subscription.BackPressureStrategy;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
@@ -29,6 +30,9 @@ public class PVCache {
 
     @Inject
     MQTTAdapter mqtt;
+
+    @ConfigProperty(name = "gateway.get.timeout", defaultValue = "5")
+    int getTimeout;
 
     public Uni<PVValue> getCached(String topic) {
         if (topic == null) return Uni.createFrom().failure(new IllegalArgumentException("Topic cannot be null"));
@@ -50,7 +54,7 @@ public class PVCache {
         });
 
         return Uni.createFrom().completionStage(future)
-                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new)
+                .ifNoItem().after(Duration.ofSeconds(getTimeout)).failWith(TimeoutException::new)
                 .onFailure(TimeoutException.class).invoke(unused -> pending.remove(topic, future));
     }
 

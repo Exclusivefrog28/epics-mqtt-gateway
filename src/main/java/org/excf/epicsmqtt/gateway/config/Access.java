@@ -1,6 +1,6 @@
 package org.excf.epicsmqtt.gateway.config;
 
-public enum Mode {
+public enum Access {
     READ_ONLY,
     READ_WRITE
 }

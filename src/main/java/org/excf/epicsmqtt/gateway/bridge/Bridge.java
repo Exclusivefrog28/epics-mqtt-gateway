@@ -8,7 +8,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
+import org.excf.epicsmqtt.gateway.config.Access;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
 import org.excf.epicsmqtt.gateway.model.PV;
@@ -34,6 +36,7 @@ public class Bridge {
     protected Map<String, Adapter> adapters = new HashMap<>();
     // map protocols and local names to topics
     protected ConcurrentMap<String, Map<String, String>> topicMap = new ConcurrentHashMap<>();
+    protected ConcurrentMap<String, Access> accessMap = new ConcurrentHashMap<>();
 
     // map topics to MQTT subscriptions
     protected Map<String, Collection<Cancellable>> subscriptions = new HashMap<>();
@@ -72,15 +75,15 @@ public class Bridge {
                 )
         );
 
-        channelSubs.add(
-                mqttAdapter.subscribeAndConcatenate(channel.mqttTopic + "/PUT", request ->
-                        mqttAdapter.parseMessage(request)
-                                .chain((pv) -> adapter.putHosted(channel.getSourceName(), pv.pvValue))
-                                .chain(unused -> adapter.getHosted(channel.getSourceName()))
-                                .chain((pvValue) -> update(channel.mqttTopic, new PV(channel.localNames, pvValue)))
-                                .ifNoItem().after(Duration.ofSeconds(5)).failWith(TimeoutException::new)
-                )
-        );
+        if (channel.access.equals(Access.READ_WRITE))
+            channelSubs.add(
+                    mqttAdapter.subscribeAndConcatenate(channel.mqttTopic + "/PUT", request ->
+                            mqttAdapter.parseMessage(request)
+                                    .chain((pv) -> adapter.putHosted(channel.getSourceName(), pv.pvValue))
+                                    .chain(unused -> adapter.getHosted(channel.getSourceName()))
+                                    .chain((pvValue) -> update(channel.mqttTopic, new PV(channel.localNames, pvValue)))
+                    )
+            );
     }
 
     public void removeHosted(String topic) {
@@ -102,6 +105,8 @@ public class Bridge {
                     topicMap.computeIfAbsent(protocol, (unused) -> new HashMap<>())
                             .put(localName, channel.mqttTopic)
             );
+
+        accessMap.put(channel.mqttTopic, channel.access);
 
         subscriptions.put(channel.mqttTopic, List.of(
                 mqttAdapter.subscribeAndConcatenate(channel.mqttTopic, message ->
@@ -166,6 +171,8 @@ public class Bridge {
     }
 
     public Uni<Void> putExternal(String protocol, String localName, PVValue pvValue) {
+        String mqttTopic = topicMap.get(protocol).get(localName);
+        if (accessMap.get(mqttTopic) == Access.READ_ONLY) return Uni.createFrom().failure(new IllegalArgumentException("Cannot write to read-only PV"));
         return mqttAdapter.publishPV(topicMap.get(protocol).get(localName) + "/PUT", new PV(pvValue), false);
     }
 

@@ -13,7 +13,7 @@ import org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
 import org.excf.epicsmqtt.gateway.config.HostedChannel;
-import org.excf.epicsmqtt.gateway.config.Mode;
+import org.excf.epicsmqtt.gateway.config.Access;
 import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
@@ -64,7 +64,7 @@ public class ChannelAccessCoreTest {
         channel.mqttTopic = "pv/arraycounter";
         channel.localNames = Map.of("ca", "BL01T-DI-CAM-01:DET:ArrayCounter");
         channel.protocol = "ca";
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         int randomInt = new Random().nextInt(100);
 
@@ -92,7 +92,7 @@ public class ChannelAccessCoreTest {
         channel.mqttTopic = "pv/uptime";
         channel.localNames = Map.of("ca", "BL01T-EA-TST-02:UPTIME");
         channel.protocol = "ca";
-        channel.mode = Mode.READ_ONLY;
+        channel.access = Access.READ_ONLY;
         channel.monitor = false;
 
         AtomicReference<byte[]> lastMessageRef = testClient.subscribe(channel.mqttTopic);
@@ -127,7 +127,7 @@ public class ChannelAccessCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_double";
         channel.localNames = Map.of("ca", "remote:pv");
-        channel.mode = Mode.READ_ONLY;
+        channel.access = Access.READ_ONLY;
 
         bridge.registerExternal(channel);
         PVValue pvValue = new PVValue();
@@ -159,7 +159,7 @@ public class ChannelAccessCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_double";
         channel.localNames = Map.of("ca", "remote:pv");
-        channel.mode = Mode.READ_WRITE;
+        channel.access = Access.READ_WRITE;
 
         bridge.registerExternal(channel);
 
@@ -195,7 +195,7 @@ public class ChannelAccessCoreTest {
         channel.alias = "test_alias";
         channel.mqttTopic = "pv/external_monitored_double";
         channel.localNames = Map.of("ca", "remote:monitored:pv");
-        channel.mode = Mode.READ_ONLY;
+        channel.access = Access.READ_ONLY;
 
         bridge.registerExternal(channel);
 
