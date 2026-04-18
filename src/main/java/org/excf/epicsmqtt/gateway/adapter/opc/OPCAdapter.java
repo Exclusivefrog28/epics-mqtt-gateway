@@ -258,10 +258,10 @@ public class OPCAdapter extends Adapter {
             pvValue.setStatus(Status.HIGH_ALARM);
             pvValue.setSeverity(Severity.forName(alarmConfig.hsv));
         } else if (!Objects.equals(alarmConfig.lsv, "NO_ALARM") && value <= config.meta.lowerWarningLimit.doubleValue()) {
-            pvValue.setStatus(Status.HIHI_ALARM);
+            pvValue.setStatus(Status.LOW_ALARM);
             pvValue.setSeverity(Severity.forName(alarmConfig.lsv));
         } else if (!Objects.equals(alarmConfig.llsv, "NO_ALARM") && value <= config.meta.lowerAlarmLimit.doubleValue()) {
-            pvValue.setStatus(Status.LOW_ALARM);
+            pvValue.setStatus(Status.LOLO_ALARM);
             pvValue.setSeverity(Severity.forName(alarmConfig.llsv));
         }
 
