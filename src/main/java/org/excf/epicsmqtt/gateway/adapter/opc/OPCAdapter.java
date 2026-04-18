@@ -129,7 +129,8 @@ public class OPCAdapter extends Adapter {
                                     .setApplicationUri("org:excf:epics:opc:client")
             ));
 
-        opcServer = new OPCServer(this);
+        Optional<Integer> serverPort = ConfigProvider.getConfig().getOptionalValue("opc.server.port", Integer.class);
+        serverPort.ifPresent(integer -> opcServer = new OPCServer(this, integer));
     }
 
     void shutDown(@Observes ShutdownEvent ev) {

@@ -41,8 +41,7 @@ public class OPCServer {
 
     private final Thread opcServerThread;
 
-    public OPCServer(OPCAdapter adapter) {
-        int port = ConfigProvider.getConfig().getOptionalValue("opc.server.port", Integer.class).orElse(50000);
+    public OPCServer(OPCAdapter adapter, int port) {
         OpcUaServerConfig config = OpcUaServerConfig.builder()
                 .setExecutor(Executors.newVirtualThreadPerTaskExecutor())
                 .setApplicationName(LocalizedText.english("EPICS MQTT GateWay OPC Server"))
