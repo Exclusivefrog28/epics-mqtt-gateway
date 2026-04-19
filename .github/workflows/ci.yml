@@ -6,6 +6,9 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -27,3 +30,17 @@ jobs:
           OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
 
         run: ./mvnw clean verify
+
+      - name: Build and Push Docker Image
+        run: >
+          ./mvnw clean package -DskipTests
+          -Dquarkus.container-image.build=true
+          -Dquarkus.container-image.push=true
+          -Dquarkus.container-image.registry=ghcr.io
+          -Dquarkus.container-image.group=${{ github.repository_owner }}
+          -Dquarkus.container-image.name=epics-mqtt-gateway
+          -Dquarkus.container-image.tag=${{ github.sha }}
+          env:
+          # Automatically provided by GitHub Actions to authenticate with GHCR
+          QUARKUS_CONTAINER_IMAGE_USERNAME: ${{ github.actor }}
+          QUARKUS_CONTAINER_IMAGE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
