@@ -6,9 +6,11 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.bridge.Bridge;
 import org.excf.epicsmqtt.gateway.config.yaml.Yaml;
 
+import java.io.FileInputStream;
 import java.io.InputStream;
 
 @ApplicationScoped
@@ -21,17 +23,15 @@ public class ConfigLoader {
     @Yaml
     ObjectMapper mapper;
 
+    @ConfigProperty(name = "config.path", defaultValue = "gateway-config.yml")
+    String configPath;
+
     void onStart(@Observes StartupEvent ev) {
         reload();
     }
 
     public void reload() {
-        try (InputStream is = Thread.currentThread().getContextClassLoader()
-                .getResourceAsStream("gateway-config.yml")) {
-            if (is == null) {
-                Log.warn("No gateway-config.yml found, skipping configuration.");
-                return;
-            }
+        try (InputStream is = new FileInputStream(configPath)) {
             GatewayConfig config = mapper.readValue(is, GatewayConfig.class);
 
             if (config.unrestricted){
@@ -49,7 +49,7 @@ public class ConfigLoader {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load gateway-config.yml", e);
+            Log.warn("gateway-config.yml could not be loaded, skipping configuration.");
         }
     }
 }

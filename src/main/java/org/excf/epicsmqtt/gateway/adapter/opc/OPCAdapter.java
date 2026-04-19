@@ -14,6 +14,7 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import org.eclipse.microprofile.config.ConfigProvider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
 import org.eclipse.milo.opcua.stack.core.types.builtin.ByteString;
@@ -30,6 +31,7 @@ import org.excf.epicsmqtt.gateway.adapter.opc.config.OPCConfig;
 import org.excf.epicsmqtt.gateway.config.yaml.Yaml;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.Map;
@@ -46,6 +48,9 @@ public class OPCAdapter extends Adapter {
     @Inject
     @Yaml
     ObjectMapper mapper;
+
+    @ConfigProperty(name = "opc.config.path", defaultValue = "opc.yml")
+    String configPath;
 
     @Override
     public String protocol() {
@@ -100,17 +105,11 @@ public class OPCAdapter extends Adapter {
 
 
     void startup(@Observes StartupEvent ev) throws Exception {
-        try (InputStream is = Thread.currentThread().getContextClassLoader()
-                .getResourceAsStream("opc.yml")) {
-            if (is != null) {
-                Log.warn("No gateway-config.yml found, skipping configuration.");
-
-                opcConfig = mapper.readValue(is, OPCConfig.class).items;
-            }
+        try (InputStream is = new FileInputStream(configPath)) {
+            opcConfig = mapper.readValue(is, OPCConfig.class).items;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load opc.yml", e);
+            Log.warn("opc.yml could not be loaded, skipping configuration.");
         }
-
 
         Optional<String> clientUrl = ConfigProvider.getConfig().getOptionalValue("opc.client.url", String.class);
         Optional<String> clientHost = ConfigProvider.getConfig().getOptionalValue("opc.client.host", String.class);
