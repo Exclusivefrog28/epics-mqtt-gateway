@@ -4,10 +4,9 @@ hosted:
 #    protocol: ca
 #    localNames:
 #      ca: BL01T-EA-TST-02:UPTIME
-#    mode: READ_ONLY
-#    monitor: true
-#
+#    access: READ_ONLY
+
 external:
 #  - alias: external_test
 #    mqttTopic: pv/external
-#    mode: READ_WRITE
+#    access: READ_WRITE

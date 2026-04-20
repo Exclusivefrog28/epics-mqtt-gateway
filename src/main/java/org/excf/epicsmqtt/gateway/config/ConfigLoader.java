@@ -49,7 +49,7 @@ public class ConfigLoader {
                 }
             }
         } catch (Exception e) {
-            Log.warn("gateway-config.yml could not be loaded, skipping configuration.");
+            Log.warn("gateway-config.yml could not be loaded, skipping configuration.", e);
         }
     }
 }
