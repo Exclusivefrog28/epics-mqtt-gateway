@@ -3,6 +3,7 @@ package org.excf.epicsmqtt.gateway.mqtt;
 import com.hivemq.client.mqtt.MqttClient;
 import com.hivemq.client.mqtt.MqttClientState;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
+import com.hivemq.client.mqtt.mqtt5.Mqtt5ClientBuilder;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5RxClient;
 import com.hivemq.client.mqtt.mqtt5.message.connect.Mqtt5Connect;
 import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
@@ -40,6 +41,9 @@ public class MqttService {
     @ConfigProperty(name = "mqtt.port")
     int port;
 
+    @ConfigProperty(name = "mqtt.ssl", defaultValue = "true")
+    boolean ssl;
+
     @ConfigProperty(name = "mqtt.client-id")
     String clientId;
 
@@ -52,13 +56,16 @@ public class MqttService {
     void init() {
         Log.info("Initializing MQTT Client...");
 
-        client = MqttClient.builder()
+        Mqtt5ClientBuilder clientBuilder = MqttClient.builder()
                 .useMqttVersion5()
                 .identifier(clientId)
                 .serverHost(host)
-                .serverPort(port)
-                .sslWithDefaultConfig()
-                .buildRx();
+                .serverPort(port);
+
+        if (ssl)
+            clientBuilder.sslWithDefaultConfig();
+
+        client = clientBuilder.buildRx();
     }
 
     void onStart(@Observes StartupEvent ev) {
@@ -121,7 +128,7 @@ public class MqttService {
                 .withBackOff(Duration.ofSeconds(1), Duration.ofSeconds(10))
                 .atMost(10)
                 .onItem().transform(Unchecked.function(result -> {
-                    if (result instanceof Mqtt5PublishResult.Mqtt5Qos1Result qos1Result){
+                    if (result instanceof Mqtt5PublishResult.Mqtt5Qos1Result qos1Result) {
                         if (qos1Result.getPubAck().getReasonCode() == Mqtt5PubAckReasonCode.NOT_AUTHORIZED)
                             throw new UnauthorizedException("MQTT publish failed, publishing to %s is not authorized".formatted(topic));
                         return qos1Result;
