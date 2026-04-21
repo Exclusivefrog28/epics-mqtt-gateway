@@ -8,7 +8,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.excf.epicsmqtt.gateway.adapter.Adapter;
 import org.excf.epicsmqtt.gateway.config.Access;
 import org.excf.epicsmqtt.gateway.config.ExternalChannel;
@@ -17,11 +16,9 @@ import org.excf.epicsmqtt.gateway.model.PV;
 import org.excf.epicsmqtt.gateway.model.PVValue;
 import org.excf.epicsmqtt.gateway.mqtt.MQTTAdapter;
 
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeoutException;
 
 @ApplicationScoped
 public class Bridge {
@@ -63,6 +60,7 @@ public class Bridge {
                             mqttAdapter.parseBooleanMessage(request)
                                     .invoke(shouldMonitor -> {
                                         if (shouldMonitor) addMonitor(channel, adapter);
+                                        else removeMonitor(channel.mqttTopic);
                                     })
                     )
             );
@@ -140,6 +138,10 @@ public class Bridge {
                 .onFailure().recoverWithItem(unused -> null)
                 .subscribe().with(unused -> {
                 }, e -> Log.error("Monitor stream error", e)));
+    }
+
+    private void removeMonitor(String topic) {
+        monitors.remove(topic).cancel();
     }
 
     private Uni<Void> handleExternal(PV pv) {

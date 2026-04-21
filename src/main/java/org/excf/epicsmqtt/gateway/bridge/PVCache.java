@@ -5,7 +5,6 @@ import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.TimeoutException;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.operators.multi.processors.BroadcastProcessor;
 import io.smallrye.mutiny.subscription.BackPressureStrategy;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 import jakarta.inject.Inject;
@@ -44,11 +43,12 @@ public class PVCache {
         if (topic == null) return Uni.createFrom().failure(new IllegalArgumentException("Topic cannot be null"));
         CompletableFuture<PVValue> future = pending.computeIfAbsent(topic, t -> {
             CompletableFuture<PVValue> newFuture = new CompletableFuture<>();
-            sendGetRequest(t).subscribe().with(
-                    unused -> {
-                    },
-                    failure -> Log.errorf(failure, "Failed to send GET request to %s", t)
-            );
+            mqtt.publishBoolean(t + "/GET", true)
+                    .subscribe().with(
+                            unused -> {
+                            },
+                            failure -> Log.errorf(failure, "Failed to send GET request to %s", t)
+                    );
 
             return newFuture;
         });
@@ -60,7 +60,7 @@ public class PVCache {
 
     public void add(PV pv) {
         PVValue oldValue = cache.get(pv.topic);
-        if (oldValue != null){
+        if (oldValue != null) {
             if (oldValue.value != pv.pvValue.value)
                 pv.pvValue.changeMask |= Monitor.VALUE;
 
@@ -69,7 +69,7 @@ public class PVCache {
 
             if (oldValue.metadata != pv.pvValue.metadata)
                 pv.pvValue.changeMask |= Monitor.PROPERTY;
-        }else
+        } else
             pv.pvValue.changeMask = Monitor.VALUE | Monitor.ALARM | Monitor.PROPERTY;
 
         cache.put(pv.topic, pv.pvValue);
@@ -98,9 +98,4 @@ public class PVCache {
         cache.clear();
         pending.clear();
     }
-
-    private Uni<Void> sendGetRequest(String topic) {
-        return mqtt.publishBoolean(topic + "/GET", true);
-    }
-
 }
