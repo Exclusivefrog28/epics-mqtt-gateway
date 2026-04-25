@@ -110,9 +110,10 @@ public class ChannelAccessAdapter extends Adapter {
         // Extract Time
         if (dbr instanceof TIME t) {
             TimeStamp ts = t.getTimeStamp();
-            if (ts != null) {
+            if (ts != null)
                 pvValue.timestamp = Instant.ofEpochSecond(ts.secPastEpoch(), ts.nsec());
-            }
+            else
+                pvValue.timestamp = Instant.now();
         }
 
         if (dbr instanceof LABELS) {
