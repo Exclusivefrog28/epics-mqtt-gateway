@@ -161,8 +161,7 @@ public class Bridge {
     }
 
     /**
-     * Requests the value of the PV over MQTT,
-     * unless it is monitored (in which case the cache should be up to date)
+     * Requests the value of the PV over MQTT
      */
     public Uni<PVValue> getExternal(String protocol, String localName) {
         return pvCache.get(topicMap.get(protocol).get(localName));

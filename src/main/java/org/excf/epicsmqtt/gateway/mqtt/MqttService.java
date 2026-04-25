@@ -135,7 +135,6 @@ public class MqttService {
                     }
                     return result;
                 }))
-                .onItem().invoke(result -> Log.info(((Mqtt5PublishResult.Mqtt5Qos1Result) result).getPubAck().getReasonCode()))
                 .replaceWithVoid();
     }
 

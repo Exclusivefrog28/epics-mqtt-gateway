@@ -62,7 +62,22 @@ public class ChannelAccessAdapter extends Adapter {
         PVValue pvValue = new PVValue();
 
         pvValue.value = dbr.getValue();
-        pvValue.setDBRType(dbr.getType());
+
+        DBRType complexType = dbr.getType();
+        if (complexType.isSTRING())
+            pvValue.setDBRType(DBRType.STRING);
+        else if (complexType.isSHORT())
+            pvValue.setDBRType(DBRType.SHORT);
+        else if (complexType.isFLOAT())
+            pvValue.setDBRType(DBRType.FLOAT);
+        else if (complexType.isENUM())
+            pvValue.setDBRType(DBRType.ENUM);
+        else if (complexType.isBYTE())
+            pvValue.setDBRType(DBRType.BYTE);
+        else if (complexType.isINT())
+            pvValue.setDBRType(DBRType.INT);
+        else if (complexType.isDOUBLE())
+            pvValue.setDBRType(DBRType.DOUBLE);
 
         // Extract Metadata
         if (dbr instanceof GR gr) {
