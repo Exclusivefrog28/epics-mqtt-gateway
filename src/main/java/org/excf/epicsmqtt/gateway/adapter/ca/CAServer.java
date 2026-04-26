@@ -78,7 +78,7 @@ public class CAServer implements Server {
             super.interestRegister();
             if (subscription == null)
                 subscription = adapter.addExternalMonitor(name)
-                        .onItem().invoke(pvValue -> getEventCallback().postEvent(pvValue.changeMask, fillDBR(DBRType.forValue(pvValue.type).newInstance(pvValue.getCount()), pvValue)))
+                        .onItem().invoke(pvValue -> getEventCallback().postEvent(pvValue.changeMask, fillDBR(DBRType.forValue(pvValue.type + 14).newInstance(pvValue.getCount()), pvValue)))
                         .onFailure().recoverWithItem(th -> null)
                         .subscribe().with(
                                 unused -> {
