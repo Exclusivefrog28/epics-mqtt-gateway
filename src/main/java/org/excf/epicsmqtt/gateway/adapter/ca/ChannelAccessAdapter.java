@@ -21,6 +21,8 @@ import java.time.Instant;
 @Named("ca")
 public class ChannelAccessAdapter extends Adapter {
 
+    static long TS_EPOCH_SEC_PAST_1970=7305*86400;
+
     @Override
     public String protocol() {
         return "ca";
@@ -111,7 +113,7 @@ public class ChannelAccessAdapter extends Adapter {
         if (dbr instanceof TIME t) {
             TimeStamp ts = t.getTimeStamp();
             if (ts != null)
-                pvValue.timestamp = Instant.ofEpochSecond(ts.secPastEpoch(), ts.nsec());
+                pvValue.timestamp = Instant.ofEpochSecond(ts.secPastEpoch() + TS_EPOCH_SEC_PAST_1970, ts.nsec());
         }
 
         if (dbr instanceof LABELS) {

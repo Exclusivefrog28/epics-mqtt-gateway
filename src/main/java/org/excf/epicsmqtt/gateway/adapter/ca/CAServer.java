@@ -11,6 +11,8 @@ import org.excf.epicsmqtt.gateway.model.PVValue;
 
 import java.net.InetSocketAddress;
 
+import static org.excf.epicsmqtt.gateway.adapter.ca.ChannelAccessAdapter.TS_EPOCH_SEC_PAST_1970;
+
 @Dependent
 public class CAServer implements Server {
 
@@ -171,7 +173,7 @@ public class CAServer implements Server {
 
         // extract time
         if (dbr instanceof TIME t) {
-            t.setTimeStamp(new TimeStamp(pvValue.timestamp.getEpochSecond(), pvValue.timestamp.getNano()));
+            t.setTimeStamp(new TimeStamp(pvValue.timestamp.getEpochSecond() - TS_EPOCH_SEC_PAST_1970, pvValue.timestamp.getNano()));
         }
 
         // extract enum labels
