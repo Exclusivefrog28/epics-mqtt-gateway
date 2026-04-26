@@ -137,7 +137,7 @@ public class ChannelAccessAdapter extends Adapter {
             System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.server_port", serverPort);
             System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.repeater_port", serverRepeaterPort);
 
-            System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext,max_array_bytes", maxArrayBytes);
+            System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.max_array_bytes", maxArrayBytes);
 
             caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
                     new CAServer(this));
