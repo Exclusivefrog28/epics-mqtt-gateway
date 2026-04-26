@@ -62,6 +62,8 @@ public class Bridge {
                                         if (shouldMonitor) addMonitor(channel, adapter);
                                         else removeMonitor(channel.mqttTopic);
                                     })
+                                    .onFailure().invoke(error -> Log.warn("Couldn't monitor PV", error))
+
                     )
             );
 
@@ -70,6 +72,7 @@ public class Bridge {
                         adapter.getHosted(channel.getSourceName())
                                 .onItem().transform(pvValue -> new PV(channel.localNames, pvValue))
                                 .chain((pv) -> this.update(channel.mqttTopic, pv))
+                                .onFailure().invoke(error -> Log.warn("Couldn't read PV", error))
                 )
         );
 
@@ -80,6 +83,8 @@ public class Bridge {
                                     .chain((pv) -> adapter.putHosted(channel.getSourceName(), pv.pvValue))
                                     .chain(unused -> adapter.getHosted(channel.getSourceName()))
                                     .chain((pvValue) -> update(channel.mqttTopic, new PV(channel.localNames, pvValue)))
+                                    .onFailure().invoke(error -> Log.warn("Couldn't write PV", error))
+
                     )
             );
     }
