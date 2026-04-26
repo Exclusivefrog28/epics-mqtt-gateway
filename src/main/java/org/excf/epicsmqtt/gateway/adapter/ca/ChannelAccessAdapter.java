@@ -34,14 +34,13 @@ public class ChannelAccessAdapter extends Adapter {
     String clientAutoAddrList;
     @ConfigProperty(name = "ca.client.addr.list")
     String clientAddrList;
+    @ConfigProperty(name = "ca.client.maxarraybytes", defaultValue = "16384")
+    String maxArrayBytes;
 
     @ConfigProperty(name = "ca.server.server.port", defaultValue = "5064")
     String serverPort;
     @ConfigProperty(name = "ca.server.repeater.port", defaultValue = "5065")
     String serverRepeaterPort;
-
-    @ConfigProperty(name = "ca.maxarraybytes", defaultValue = "16384")
-    String maxArrayBytes;
 
     private CAClient caClient;
 
@@ -133,11 +132,11 @@ public class ChannelAccessAdapter extends Adapter {
         try {
             System.setProperty("com.cosylab.epics.caj.CAJContext.addr_list", clientAddrList);
             System.setProperty("com.cosylab.epics.caj.CAJContext.auto_addr_list", clientAutoAddrList);
+            System.setProperty("com.cosylab.epics.caj.CAJContext.max_array_bytes", maxArrayBytes);
 
             System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.server_port", serverPort);
             System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.repeater_port", serverRepeaterPort);
 
-            System.setProperty("com.cosylab.epics.caj.cas.CAJServerContext.max_array_bytes", maxArrayBytes);
 
             caServer = JCALibrary.getInstance().createServerContext(JCALibrary.CHANNEL_ACCESS_SERVER_JAVA,
                     new CAServer(this));
