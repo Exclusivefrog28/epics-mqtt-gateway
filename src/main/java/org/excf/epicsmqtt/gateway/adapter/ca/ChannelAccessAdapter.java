@@ -112,13 +112,14 @@ public class ChannelAccessAdapter extends Adapter {
             TimeStamp ts = t.getTimeStamp();
             if (ts != null)
                 pvValue.timestamp = Instant.ofEpochSecond(ts.secPastEpoch(), ts.nsec());
-            else
-                pvValue.timestamp = Instant.now();
         }
 
         if (dbr instanceof LABELS) {
             pvValue.metadata.labels = ((LABELS) dbr).getLabels();
         }
+
+        if (pvValue.timestamp == null)
+            pvValue.timestamp = Instant.now();
 
         return pvValue;
     }
